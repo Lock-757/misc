@@ -434,11 +434,11 @@ export default function ChatScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRight}>
-              <TouchableOpacity onPress={() => router.push('/stats')} style={styles.headerButton}>
-                <Ionicons name="analytics-outline" size={24} color={METALLIC.silver} />
+              <TouchableOpacity onPress={() => router.push('/search')} style={styles.headerButton}>
+                <Ionicons name="search-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => router.push('/imagegen')} style={styles.headerButton}>
-                <Ionicons name="image-outline" size={24} color={METALLIC.silver} />
+              <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerButton}>
+                <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
               <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
                 <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
