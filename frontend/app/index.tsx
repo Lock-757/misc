@@ -914,4 +914,67 @@ const styles = StyleSheet.create({
   sendButton: { borderRadius: 18, overflow: 'hidden' },
   sendButtonDisabled: { opacity: 0.6 },
   sendGradient: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  // Menu styles
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  menuContainer: {
+    maxHeight: height * 0.75,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  menuGradient: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  menuTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: METALLIC.platinum,
+    letterSpacing: 0.5,
+  },
+  menuScroll: {
+    maxHeight: height * 0.55,
+  },
+  menuSectionTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: METALLIC.titanium,
+    marginTop: 16,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+  menuGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  menuItem: {
+    width: (width - 64) / 4,
+    alignItems: 'center',
+    gap: 8,
+  },
+  menuIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: METALLIC.silver,
+    textAlign: 'center',
+  },
 });
