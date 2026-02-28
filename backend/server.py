@@ -361,7 +361,6 @@ async def generate_image(request: ImageGenerationRequest):
                 "model": "grok-2-image",  # Grok's image model
                 "prompt": enhanced_prompt,
                 "n": 1,
-                "size": request.size,
                 "response_format": "b64_json"
             }
             
