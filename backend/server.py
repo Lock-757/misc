@@ -51,6 +51,7 @@ class AgentConfig(BaseModel):
     personality: str = "Friendly and professional"
     model: str = "grok-3-latest"
     temperature: float = 0.7
+    adult_mode: bool = False  # Enable adult/NSFW content
     tools: List[Tool] = []
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -63,6 +64,7 @@ class AgentConfigCreate(BaseModel):
     personality: Optional[str] = "Friendly and professional"
     model: Optional[str] = "grok-3-latest"
     temperature: Optional[float] = 0.7
+    adult_mode: Optional[bool] = False
 
 class AgentConfigUpdate(BaseModel):
     name: Optional[str] = None
@@ -72,6 +74,7 @@ class AgentConfigUpdate(BaseModel):
     personality: Optional[str] = None
     model: Optional[str] = None
     temperature: Optional[float] = None
+    adult_mode: Optional[bool] = None
 
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
