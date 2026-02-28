@@ -26,6 +26,7 @@ const METALLIC = {
   titanium: '#878792',
   platinum: '#E5E5EA',
   accent: '#6366F1',
+  danger: '#EF4444',
 };
 
 const AVATARS = [
@@ -61,6 +62,7 @@ interface Agent {
   personality: string;
   model: string;
   temperature: number;
+  adult_mode: boolean;
 }
 
 export default function SettingsScreen() {
@@ -76,6 +78,7 @@ export default function SettingsScreen() {
   const [personality, setPersonality] = useState('');
   const [model, setModel] = useState('grok-3-latest');
   const [temperature, setTemperature] = useState(0.7);
+  const [adultMode, setAdultMode] = useState(false);
 
   useEffect(() => {
     loadAgent();
@@ -94,6 +97,7 @@ export default function SettingsScreen() {
         setPersonality(agentData.personality);
         setModel(agentData.model);
         setTemperature(agentData.temperature);
+        setAdultMode(agentData.adult_mode || false);
       }
     } catch (error) {
       console.log('Error loading agent:', error);
@@ -119,6 +123,7 @@ export default function SettingsScreen() {
           personality: personality.trim(),
           model,
           temperature,
+          adult_mode: adultMode,
         });
       } else {
         await axios.post(`${API_URL}/api/agents`, {
@@ -129,6 +134,7 @@ export default function SettingsScreen() {
           personality: personality.trim(),
           model,
           temperature,
+          adult_mode: adultMode,
         });
       }
       Alert.alert('Saved', 'Agent configuration updated');
@@ -137,6 +143,21 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Failed to save settings');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const toggleAdultMode = () => {
+    if (!adultMode) {
+      Alert.alert(
+        'Enable Adult Mode',
+        'This will disable content filtering for chat and image generation. Are you sure?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Enable', style: 'destructive', onPress: () => setAdultMode(true) },
+        ]
+      );
+    } else {
+      setAdultMode(false);
     }
   };
 
@@ -197,10 +218,18 @@ export default function SettingsScreen() {
                 </View>
               </LinearGradient>
               <Text style={styles.previewName}>{name || 'Agent'}</Text>
-              <View style={styles.previewBadge}>
-                <Text style={styles.previewModel}>
-                  {MODELS.find(m => m.id === model)?.label || 'Grok'}
-                </Text>
+              <View style={styles.previewBadges}>
+                <View style={styles.previewBadge}>
+                  <Text style={styles.previewModel}>
+                    {MODELS.find(m => m.id === model)?.label || 'Grok'}
+                  </Text>
+                </View>
+                {adultMode && (
+                  <View style={[styles.previewBadge, styles.adultBadge]}>
+                    <Ionicons name="warning" size={10} color={METALLIC.danger} />
+                    <Text style={styles.adultBadgeText}>18+</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -354,6 +383,35 @@ export default function SettingsScreen() {
               </View>
             </View>
 
+            {/* Adult Mode */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Content Settings</Text>
+              <TouchableOpacity style={styles.adultModeRow} onPress={toggleAdultMode}>
+                <View style={styles.adultModeInfo}>
+                  <View style={[styles.adultModeIcon, adultMode && styles.adultModeIconActive]}>
+                    <Ionicons name="shield-outline" size={22} color={adultMode ? METALLIC.danger : METALLIC.titanium} />
+                  </View>
+                  <View style={styles.adultModeText}>
+                    <Text style={styles.adultModeTitle}>Adult Mode</Text>
+                    <Text style={styles.adultModeDesc}>
+                      {adultMode ? 'Content filtering disabled' : 'Safe content filtering enabled'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.toggleSwitch, adultMode && styles.toggleSwitchActive]}>
+                  <View style={[styles.toggleKnob, adultMode && styles.toggleKnobActive]} />
+                </View>
+              </TouchableOpacity>
+              {adultMode && (
+                <View style={styles.warningBox}>
+                  <Ionicons name="warning" size={16} color={METALLIC.danger} />
+                  <Text style={styles.warningText}>
+                    Adult content may be generated. User discretion advised.
+                  </Text>
+                </View>
+              )}
+            </View>
+
             <View style={styles.bottomSpacing} />
           </ScrollView>
         </KeyboardAvoidingView>
@@ -377,12 +435,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   backButton: { padding: 4 },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    letterSpacing: 0.5,
-  },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: METALLIC.platinum, letterSpacing: 0.5 },
   saveButton: { borderRadius: 16, overflow: 'hidden' },
   saveButtonDisabled: { opacity: 0.6 },
   saveGradient: { paddingHorizontal: 18, paddingVertical: 8 },
@@ -407,12 +460,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
   },
-  previewName: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    marginBottom: 6,
-  },
+  previewName: { fontSize: 22, fontWeight: '600', color: METALLIC.platinum, marginBottom: 8 },
+  previewBadges: { flexDirection: 'row', gap: 8 },
   previewBadge: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     paddingHorizontal: 12,
@@ -420,6 +469,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   previewModel: { fontSize: 12, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  adultBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  adultBadgeText: { fontSize: 11, color: METALLIC.danger, fontWeight: '600' },
   section: { marginBottom: 24 },
   sectionTitle: {
     fontSize: 12,
@@ -527,5 +583,51 @@ const styles = StyleSheet.create({
   tempDotActive: { backgroundColor: METALLIC.accent, borderColor: METALLIC.accent },
   tempLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   tempLabel: { fontSize: 11, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  adultModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  adultModeInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  adultModeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adultModeIconActive: { backgroundColor: 'rgba(239, 68, 68, 0.15)' },
+  adultModeText: { gap: 2 },
+  adultModeTitle: { fontSize: 15, fontWeight: '600', color: METALLIC.platinum },
+  adultModeDesc: { fontSize: 12, color: METALLIC.titanium },
+  toggleSwitch: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: METALLIC.gunmetal,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchActive: { backgroundColor: METALLIC.danger },
+  toggleKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },
+  toggleKnobActive: { alignSelf: 'flex-end' },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  warningText: { flex: 1, fontSize: 12, color: METALLIC.danger, lineHeight: 16 },
   bottomSpacing: { height: 40 },
 });
