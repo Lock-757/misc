@@ -88,6 +88,7 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [showMenu, setShowMenu] = useState(false);
 
   useEffect(() => {
     loadData();
