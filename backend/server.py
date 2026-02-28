@@ -312,6 +312,123 @@ Your personality: {agent_config.personality}"""
 
 # ==================== UI CONFIG ENDPOINTS ====================
 
+# Image Generation Models
+class ImageGenerationRequest(BaseModel):
+    agent_id: str
+    prompt: str
+    size: str = "1024x1024"  # 1024x1024, 1024x1792, 1792x1024
+    quality: str = "hd"  # standard, hd
+    style: str = "vivid"  # vivid, natural
+
+class ImageGenerationResponse(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    prompt: str
+    image_base64: str
+    size: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== IMAGE GENERATION ENDPOINT ====================
+
+@api_router.post("/generate-image", response_model=ImageGenerationResponse)
+async def generate_image(request: ImageGenerationRequest):
+    """Generate HD images using Grok's image generation API"""
+    
+    # Get agent config to check adult mode
+    agent = await db.agents.find_one({"id": request.agent_id})
+    adult_mode = agent.get("adult_mode", False) if agent else False
+    
+    if not GROK_API_KEY:
+        raise HTTPException(status_code=500, detail="Grok API key not configured")
+    
+    try:
+        # Use httpx for the image generation request
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            headers = {
+                "Authorization": f"Bearer {GROK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            # Prepare the prompt - add style hints for HD quality
+            enhanced_prompt = request.prompt
+            if request.quality == "hd":
+                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
+            
+            # If adult mode is disabled, add safety prefix
+            if not adult_mode:
+                enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
+            
+            payload = {
+                "model": "grok-2-image",  # Grok's image model
+                "prompt": enhanced_prompt,
+                "n": 1,
+                "size": request.size,
+                "response_format": "b64_json"
+            }
+            
+            response = await client.post(
+                "https://api.x.ai/v1/images/generations",
+                headers=headers,
+                json=payload
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.text
+                logger.error(f"Image generation failed: {error_detail}")
+                raise HTTPException(status_code=response.status_code, detail=f"Image generation failed: {error_detail}")
+            
+            result = response.json()
+            
+            # Extract base64 image
+            if "data" in result and len(result["data"]) > 0:
+                image_data = result["data"][0]
+                image_base64 = image_data.get("b64_json", "")
+                
+                if not image_base64:
+                    raise HTTPException(status_code=500, detail="No image data received")
+                
+                # Store in database for history
+                image_record = {
+                    "id": str(uuid.uuid4()),
+                    "agent_id": request.agent_id,
+                    "prompt": request.prompt,
+                    "image_base64": image_base64,
+                    "size": request.size,
+                    "quality": request.quality,
+                    "adult_mode": adult_mode,
+                    "created_at": datetime.utcnow()
+                }
+                await db.generated_images.insert_one(image_record)
+                
+                return ImageGenerationResponse(
+                    id=image_record["id"],
+                    prompt=request.prompt,
+                    image_base64=image_base64,
+                    size=request.size
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Invalid response from image API")
+                
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Image generation timed out. Please try again.")
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/generated-images")
+async def get_generated_images(agent_id: Optional[str] = None, limit: int = 20):
+    """Get history of generated images"""
+    query = {"agent_id": agent_id} if agent_id else {}
+    images = await db.generated_images.find(query).sort("created_at", -1).limit(limit).to_list(limit)
+    return images
+
+@api_router.delete("/generated-images/{image_id}")
+async def delete_generated_image(image_id: str):
+    """Delete a generated image"""
+    result = await db.generated_images.delete_one({"id": image_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return {"message": "Image deleted"}
+
 @api_router.get("/ui-config", response_model=UIConfig)
 async def get_ui_config():
     config = await db.ui_config.find_one({})
