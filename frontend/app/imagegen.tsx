@@ -350,6 +350,28 @@ export default function ImageGenScreen() {
                   </Text>
                   <Text style={styles.previewMeta}>{previewImage.size}</Text>
                 </View>
+                <View style={styles.previewActions}>
+                  <TouchableOpacity
+                    style={styles.previewAction}
+                    onPress={() => {
+                      setPreviewImage(null);
+                      router.push({
+                        pathname: '/image-editor',
+                        params: { imageBase64: previewImage.image_base64 }
+                      });
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={22} color="#fff" />
+                    <Text style={styles.previewActionText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.previewAction, styles.previewActionDanger]}
+                    onPress={() => deleteImage(previewImage.id)}
+                  >
+                    <Ionicons name="trash-outline" size={22} color={METALLIC.danger} />
+                    <Text style={[styles.previewActionText, { color: METALLIC.danger }]}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
