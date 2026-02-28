@@ -365,6 +365,9 @@ export default function ChatScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRight}>
+              <TouchableOpacity onPress={() => router.push('/imagegen')} style={styles.headerButton}>
+                <Ionicons name="image-outline" size={24} color={METALLIC.silver} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => router.push('/tools')} style={styles.headerButton}>
                 <Ionicons name="construct-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
