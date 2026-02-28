@@ -12,13 +12,14 @@ import {
   Dimensions,
   ActivityIndicator,
   RefreshControl,
-  Clipboard,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import axios from 'axios';
 
 const { width, height } = Dimensions.get('window');
@@ -41,6 +42,7 @@ interface Agent {
   personality: string;
   model: string;
   temperature: number;
+  adult_mode: boolean;
 }
 
 const defaultAgent: Agent = {
@@ -52,9 +54,9 @@ const defaultAgent: Agent = {
   personality: 'Friendly and professional',
   model: 'grok-3-latest',
   temperature: 0.7,
+  adult_mode: false,
 };
 
-// Metallic color palette
 const METALLIC = {
   chrome: '#C0C0C8',
   silver: '#A8A8B0',
@@ -63,7 +65,8 @@ const METALLIC = {
   titanium: '#878792',
   platinum: '#E5E5EA',
   accent: '#6366F1',
-  accentGlow: 'rgba(99, 102, 241, 0.3)',
+  danger: '#EF4444',
+  success: '#10B981',
 };
 
 export default function ChatScreen() {
@@ -71,7 +74,6 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -80,11 +82,35 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  
+  // Voice states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   useEffect(() => {
     loadData();
     startAnimations();
+    setupAudio();
+    return () => {
+      if (recording) {
+        recording.stopAndUnloadAsync();
+      }
+    };
   }, []);
+
+  const setupAudio = async () => {
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+    } catch (error) {
+      console.log('Audio setup error:', error);
+    }
+  };
 
   const startAnimations = () => {
     Animated.timing(fadeAnim, {
@@ -106,15 +132,6 @@ export default function ChatScreen() {
           useNativeDriver: true,
         }),
       ])
-    ).start();
-
-    // Shimmer effect
-    Animated.loop(
-      Animated.timing(shimmerAnim, {
-        toValue: 1,
-        duration: 3000,
-        useNativeDriver: true,
-      })
     ).start();
   };
 
@@ -141,6 +158,74 @@ export default function ChatScreen() {
     await loadData();
     setRefreshing(false);
   }, []);
+
+  // Voice Recording
+  const startRecording = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant microphone access');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(newRecording);
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Recording error:', error);
+      Alert.alert('Error', 'Failed to start recording');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+
+    try {
+      setIsRecording(false);
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (uri) {
+        // For now, we'll simulate transcription
+        // In production, you'd send this to a speech-to-text API
+        Alert.alert(
+          'Voice Recording',
+          'Voice recording captured! In production, this would be transcribed to text.',
+          [
+            { text: 'OK' }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Stop recording error:', error);
+    }
+  };
+
+  // Text-to-Speech
+  const speakMessage = async (text: string) => {
+    if (isSpeaking) {
+      Speech.stop();
+      setIsSpeaking(false);
+      return;
+    }
+
+    setIsSpeaking(true);
+    Speech.speak(text, {
+      language: 'en',
+      pitch: 1.0,
+      rate: 0.9,
+      onDone: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+  };
 
   const sendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
@@ -178,6 +263,12 @@ export default function ChatScreen() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Auto-speak if voice is enabled
+      if (voiceEnabled && assistantMessage.content) {
+        // Optional: auto-speak responses
+        // speakMessage(assistantMessage.content);
+      }
     } catch (error: any) {
       console.error('Chat error:', error);
       const errorMessage: Message = {
@@ -200,41 +291,8 @@ export default function ChatScreen() {
     setConversationId(null);
   };
 
-  const copyMessage = (content: string) => {
-    Clipboard.setString(content);
+  const copyToClipboard = (text: string) => {
     Alert.alert('Copied', 'Message copied to clipboard');
-  };
-
-  const regenerateMessage = async (messageIndex: number) => {
-    if (isLoading) return;
-    const userMessages = messages.filter(m => m.role === 'user');
-    if (userMessages.length === 0) return;
-    
-    const lastUserMessage = userMessages[userMessages.length - 1];
-    setMessages(prev => prev.slice(0, -1));
-    setIsLoading(true);
-
-    try {
-      const response = await axios.post(`${API_URL}/api/chat`, {
-        agent_id: agent.id,
-        conversation_id: conversationId,
-        message: lastUserMessage.content,
-      });
-
-      const assistantMessage: Message = {
-        id: response.data.message.id,
-        role: 'assistant',
-        content: response.data.message.content,
-        tool_calls: response.data.message.tool_calls,
-        timestamp: response.data.message.timestamp,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Regenerate error:', error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const getAvatarIcon = (avatar: string) => {
@@ -307,16 +365,20 @@ export default function ChatScreen() {
           <View style={styles.messageActions}>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => copyMessage(message.content)}
+              onPress={() => copyToClipboard(message.content)}
             >
-              <Ionicons name="copy-outline" size={18} color={METALLIC.chrome} />
+              <Ionicons name="copy-outline" size={16} color={METALLIC.chrome} />
             </TouchableOpacity>
-            {!isUser && index === messages.length - 1 && (
+            {!isUser && (
               <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => regenerateMessage(index)}
+                style={[styles.actionButton, isSpeaking && styles.actionButtonActive]}
+                onPress={() => speakMessage(message.content)}
               >
-                <Ionicons name="refresh-outline" size={18} color={METALLIC.chrome} />
+                <Ionicons 
+                  name={isSpeaking ? "stop" : "volume-high-outline"} 
+                  size={16} 
+                  color={isSpeaking ? METALLIC.accent : METALLIC.chrome} 
+                />
               </TouchableOpacity>
             )}
           </View>
@@ -360,16 +422,21 @@ export default function ChatScreen() {
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>{agent.model.split('-')[0]}</Text>
+                  {agent.adult_mode && (
+                    <View style={styles.adultBadgeSmall}>
+                      <Text style={styles.adultBadgeText}>18+</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>
 
             <View style={styles.headerRight}>
+              <TouchableOpacity onPress={() => router.push('/stats')} style={styles.headerButton}>
+                <Ionicons name="analytics-outline" size={24} color={METALLIC.silver} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => router.push('/imagegen')} style={styles.headerButton}>
                 <Ionicons name="image-outline" size={24} color={METALLIC.silver} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => router.push('/tools')} style={styles.headerButton}>
-                <Ionicons name="construct-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
               <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
                 <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
@@ -445,6 +512,24 @@ export default function ChatScreen() {
                     <Text style={styles.statLabel}>Tools</Text>
                   </View>
                 </View>
+
+                {/* Feature Cards */}
+                <View style={styles.featureCards}>
+                  <TouchableOpacity style={styles.featureCard} onPress={() => router.push('/imagegen')}>
+                    <LinearGradient colors={['rgba(99,102,241,0.15)', 'rgba(99,102,241,0.05)']} style={styles.featureGradient}>
+                      <Ionicons name="image" size={24} color={METALLIC.accent} />
+                      <Text style={styles.featureTitle}>HD Images</Text>
+                      <Text style={styles.featureDesc}>Generate art</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.featureCard} onPress={() => router.push('/tools')}>
+                    <LinearGradient colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']} style={styles.featureGradient}>
+                      <Ionicons name="construct" size={24} color={METALLIC.success} />
+                      <Text style={styles.featureTitle}>Tools</Text>
+                      <Text style={styles.featureDesc}>Dynamic gen</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               messages.map((msg, idx) => renderMessage(msg, idx))
@@ -481,17 +566,25 @@ export default function ChatScreen() {
               style={styles.inputGradient}
             >
               <View style={styles.inputContainer}>
-                <TouchableOpacity style={styles.inputIcon} onPress={() => router.push('/ui-editor')}>
-                  <Ionicons name="color-palette-outline" size={22} color={METALLIC.titanium} />
+                <TouchableOpacity 
+                  style={[styles.inputIcon, isRecording && styles.inputIconRecording]} 
+                  onPress={isRecording ? stopRecording : startRecording}
+                >
+                  <Ionicons 
+                    name={isRecording ? "stop-circle" : "mic-outline"} 
+                    size={22} 
+                    color={isRecording ? METALLIC.danger : METALLIC.titanium} 
+                  />
                 </TouchableOpacity>
                 <TextInput
                   style={styles.input}
-                  placeholder="Message..."
-                  placeholderTextColor={METALLIC.titanium}
+                  placeholder={isRecording ? "Recording..." : "Message..."}
+                  placeholderTextColor={isRecording ? METALLIC.danger : METALLIC.titanium}
                   value={inputText}
                   onChangeText={setInputText}
                   multiline
                   maxLength={2000}
+                  editable={!isRecording}
                 />
                 <TouchableOpacity
                   style={[
@@ -518,354 +611,170 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  header: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   headerGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  headerButton: {
-    padding: 8,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  agentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  avatarContainer: {
-    marginRight: 12,
-  },
+  headerButton: { padding: 6 },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  agentInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' },
+  avatarContainer: { marginRight: 10 },
   avatarGradient: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   avatarInner: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: METALLIC.darkSteel,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarRing: {
     position: 'absolute',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
-  agentTextContainer: {
-    alignItems: 'flex-start',
+  agentTextContainer: { alignItems: 'flex-start' },
+  agentName: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum, letterSpacing: 0.5 },
+  statusContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
+  statusText: { fontSize: 10, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  adultBadgeSmall: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  agentName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    letterSpacing: 0.5,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 11,
-    color: METALLIC.titanium,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  chatContainer: {
-    flex: 1,
-  },
-  messagesContainer: {
-    flex: 1,
-  },
-  messagesContent: {
-    padding: 16,
-    paddingBottom: 20,
-  },
-  messageContainer: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    alignItems: 'flex-end',
-  },
-  userMessageContainer: {
-    justifyContent: 'flex-end',
-  },
-  assistantMessageContainer: {
-    justifyContent: 'flex-start',
-  },
+  adultBadgeText: { fontSize: 8, fontWeight: '700', color: METALLIC.danger },
+  chatContainer: { flex: 1 },
+  messagesContainer: { flex: 1 },
+  messagesContent: { padding: 16, paddingBottom: 20 },
+  messageContainer: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
+  userMessageContainer: { justifyContent: 'flex-end' },
+  assistantMessageContainer: { justifyContent: 'flex-start' },
   avatarSmall: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
-  messageBubble: {
-    maxWidth: width * 0.75,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  userBubble: {
-    borderBottomRightRadius: 4,
-  },
-  assistantBubble: {
-    borderBottomLeftRadius: 4,
-  },
-  bubbleGradient: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  messageText: {
-    fontSize: 15,
-    color: METALLIC.platinum,
-    lineHeight: 22,
-  },
-  userMessageText: {
-    color: '#fff',
-  },
-  toolContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    gap: 6,
-  },
+  messageBubble: { maxWidth: width * 0.75, borderRadius: 16, overflow: 'hidden' },
+  userBubble: { borderBottomRightRadius: 4 },
+  assistantBubble: { borderBottomLeftRadius: 4 },
+  bubbleGradient: { paddingHorizontal: 14, paddingVertical: 10 },
+  messageText: { fontSize: 15, color: METALLIC.platinum, lineHeight: 21 },
+  userMessageText: { color: '#fff' },
+  toolContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 6 },
   toolBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
     gap: 4,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.3)',
   },
-  toolText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: METALLIC.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  messageActions: {
-    flexDirection: 'row',
-    marginLeft: 8,
-    gap: 4,
-  },
+  toolText: { fontSize: 10, fontWeight: '600', color: METALLIC.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
+  messageActions: { flexDirection: 'row', marginLeft: 6, gap: 4 },
   actionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: METALLIC.gunmetal,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: height * 0.08,
-  },
-  emptyAvatar: {
-    marginBottom: 24,
-  },
+  actionButtonActive: { backgroundColor: 'rgba(99, 102, 241, 0.2)' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: height * 0.05 },
+  emptyAvatar: { marginBottom: 20 },
   emptyAvatarGradient: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   emptyAvatarInner: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: METALLIC.darkSteel,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyAvatarRing: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  emptyTitle: {
-    fontSize: 26,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    color: METALLIC.titanium,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-    lineHeight: 22,
-  },
-  suggestionContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginTop: 28,
-    gap: 10,
-  },
-  suggestionChip: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
+  emptyTitle: { fontSize: 24, fontWeight: '600', color: METALLIC.platinum, marginBottom: 6, letterSpacing: 0.5 },
+  emptySubtitle: { fontSize: 14, color: METALLIC.titanium, textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
+  suggestionContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 24, gap: 8 },
+  suggestionChip: { borderRadius: 18, overflow: 'hidden' },
   suggestionGradient: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  suggestionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: METALLIC.silver,
-  },
+  suggestionText: { fontSize: 13, fontWeight: '500', color: METALLIC.silver },
   statsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 24,
     backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  statItem: {
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    textTransform: 'capitalize',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: METALLIC.titanium,
-    marginTop: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  typingIndicator: {
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    overflow: 'hidden',
-  },
-  typingGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  typingDots: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: METALLIC.silver,
-  },
-  typingText: {
-    fontSize: 13,
-    color: METALLIC.titanium,
-    letterSpacing: 0.5,
-  },
-  inputWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 8 : 16,
-    paddingTop: 8,
-  },
-  inputGradient: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingLeft: 6,
-    paddingRight: 6,
-    paddingVertical: 6,
-  },
-  inputIcon: {
-    padding: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: METALLIC.platinum,
-    maxHeight: 100,
-    paddingTop: 10,
-    paddingBottom: 10,
-  },
-  sendButton: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  sendButtonDisabled: {
-    opacity: 0.6,
-  },
-  sendGradient: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  statItem: { alignItems: 'center', paddingHorizontal: 14 },
+  statValue: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum, textTransform: 'capitalize' },
+  statLabel: { fontSize: 10, color: METALLIC.titanium, marginTop: 2, textTransform: 'uppercase', letterSpacing: 1 },
+  statDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.1)' },
+  featureCards: { flexDirection: 'row', marginTop: 20, gap: 12 },
+  featureCard: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+  featureGradient: { padding: 16, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  featureTitle: { fontSize: 14, fontWeight: '600', color: METALLIC.platinum },
+  featureDesc: { fontSize: 11, color: METALLIC.titanium },
+  loadingContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  typingIndicator: { borderRadius: 16, borderBottomLeftRadius: 4, overflow: 'hidden' },
+  typingGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+  typingDots: { flexDirection: 'row', gap: 4 },
+  dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: METALLIC.silver },
+  typingText: { fontSize: 12, color: METALLIC.titanium, letterSpacing: 0.5 },
+  inputWrapper: { paddingHorizontal: 12, paddingBottom: Platform.OS === 'ios' ? 6 : 12, paddingTop: 6 },
+  inputGradient: { borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 4, paddingRight: 4, paddingVertical: 4 },
+  inputIcon: { padding: 8 },
+  inputIconRecording: { backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 20 },
+  input: { flex: 1, fontSize: 15, color: METALLIC.platinum, maxHeight: 100, paddingTop: 8, paddingBottom: 8 },
+  sendButton: { borderRadius: 18, overflow: 'hidden' },
+  sendButtonDisabled: { opacity: 0.6 },
+  sendGradient: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 });

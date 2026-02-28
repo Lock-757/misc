@@ -20,6 +20,8 @@ export default function RootLayout() {
         <Stack.Screen name="history" options={{ presentation: 'modal' }} />
         <Stack.Screen name="tools" options={{ presentation: 'modal' }} />
         <Stack.Screen name="imagegen" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="image-editor" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="stats" options={{ presentation: 'modal' }} />
       </Stack>
     </View>
   );
