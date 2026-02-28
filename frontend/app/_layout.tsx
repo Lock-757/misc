@@ -10,13 +10,15 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#0F0F1A' },
+          contentStyle: { backgroundColor: '#0A0A0F' },
           animation: 'slide_from_right',
         }}
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="ui-editor" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="history" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="tools" options={{ presentation: 'modal' }} />
       </Stack>
     </View>
   );
@@ -25,6 +27,6 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F1A',
+    backgroundColor: '#0A0A0F',
   },
 });

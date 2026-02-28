@@ -12,6 +12,8 @@ import {
   Dimensions,
   ActivityIndicator,
   RefreshControl,
+  Clipboard,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,31 +43,27 @@ interface Agent {
   temperature: number;
 }
 
-interface UIConfig {
-  primary_color: string;
-  accent_color: string;
-  background_gradient: string[];
-  chat_bubble_user: string;
-  chat_bubble_assistant: string;
-}
-
 const defaultAgent: Agent = {
   id: 'default-agent',
   name: 'Nova',
   avatar: 'planet',
-  avatar_color: '#8B5CF6',
+  avatar_color: '#7C7C8A',
   system_prompt: 'You are Nova, a highly intelligent AI assistant.',
   personality: 'Friendly and professional',
   model: 'grok-3-latest',
   temperature: 0.7,
 };
 
-const defaultUIConfig: UIConfig = {
-  primary_color: '#8B5CF6',
-  accent_color: '#06B6D4',
-  background_gradient: ['#0F0F1A', '#1A1A2E', '#16213E'],
-  chat_bubble_user: '#8B5CF6',
-  chat_bubble_assistant: '#1E1E2E',
+// Metallic color palette
+const METALLIC = {
+  chrome: '#C0C0C8',
+  silver: '#A8A8B0',
+  gunmetal: '#2A2A32',
+  darkSteel: '#18181D',
+  titanium: '#878792',
+  platinum: '#E5E5EA',
+  accent: '#6366F1',
+  accentGlow: 'rgba(99, 102, 241, 0.3)',
 };
 
 export default function ChatScreen() {
@@ -73,14 +71,15 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agent, setAgent] = useState<Agent>(defaultAgent);
-  const [uiConfig, setUIConfig] = useState<UIConfig>(defaultUIConfig);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -97,38 +96,41 @@ export default function ChatScreen() {
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1500,
+          toValue: 1.05,
+          duration: 2000,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 2000,
           useNativeDriver: true,
         }),
       ])
+    ).start();
+
+    // Shimmer effect
+    Animated.loop(
+      Animated.timing(shimmerAnim, {
+        toValue: 1,
+        duration: 3000,
+        useNativeDriver: true,
+      })
     ).start();
   };
 
   const loadData = async () => {
     try {
-      // Load agent config
       const agentsRes = await axios.get(`${API_URL}/api/agents`);
       if (agentsRes.data.length > 0) {
         setAgent(agentsRes.data[0]);
       } else {
-        // Create default agent
         const newAgent = await axios.post(`${API_URL}/api/agents`, {
           name: 'Nova',
           avatar: 'planet',
-          avatar_color: '#8B5CF6',
+          avatar_color: '#7C7C8A',
         });
         setAgent(newAgent.data);
       }
-
-      // Load UI config
-      const uiRes = await axios.get(`${API_URL}/api/ui-config`);
-      setUIConfig(uiRes.data);
     } catch (error) {
       console.log('Error loading data:', error);
     }
@@ -181,7 +183,7 @@ export default function ChatScreen() {
       const errorMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: 'Connection interrupted. Please try again.',
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -198,6 +200,43 @@ export default function ChatScreen() {
     setConversationId(null);
   };
 
+  const copyMessage = (content: string) => {
+    Clipboard.setString(content);
+    Alert.alert('Copied', 'Message copied to clipboard');
+  };
+
+  const regenerateMessage = async (messageIndex: number) => {
+    if (isLoading) return;
+    const userMessages = messages.filter(m => m.role === 'user');
+    if (userMessages.length === 0) return;
+    
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    setMessages(prev => prev.slice(0, -1));
+    setIsLoading(true);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/chat`, {
+        agent_id: agent.id,
+        conversation_id: conversationId,
+        message: lastUserMessage.content,
+      });
+
+      const assistantMessage: Message = {
+        id: response.data.message.id,
+        role: 'assistant',
+        content: response.data.message.content,
+        tool_calls: response.data.message.tool_calls,
+        timestamp: response.data.message.timestamp,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Regenerate error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getAvatarIcon = (avatar: string) => {
     const icons: { [key: string]: keyof typeof Ionicons.glyphMap } = {
       robot: 'hardware-chip',
@@ -206,13 +245,15 @@ export default function ChatScreen() {
       flash: 'flash',
       diamond: 'diamond',
       flame: 'flame',
+      cube: 'cube',
+      prism: 'prism',
     };
     return icons[avatar] || 'planet';
   };
 
   const renderMessage = (message: Message, index: number) => {
     const isUser = message.role === 'user';
-    const bubbleColor = isUser ? uiConfig.chat_bubble_user : uiConfig.chat_bubble_assistant;
+    const isSelected = selectedMessage === message.id;
 
     return (
       <Animated.View
@@ -224,73 +265,115 @@ export default function ChatScreen() {
         ]}
       >
         {!isUser && (
-          <View style={[styles.avatarSmall, { backgroundColor: agent.avatar_color + '30' }]}>
-            <Ionicons name={getAvatarIcon(agent.avatar)} size={18} color={agent.avatar_color} />
-          </View>
+          <LinearGradient
+            colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
+            style={styles.avatarSmall}
+          >
+            <Ionicons name={getAvatarIcon(agent.avatar)} size={16} color={METALLIC.chrome} />
+          </LinearGradient>
         )}
-        <View
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onLongPress={() => setSelectedMessage(isSelected ? null : message.id)}
           style={[
             styles.messageBubble,
             isUser ? styles.userBubble : styles.assistantBubble,
-            { backgroundColor: bubbleColor },
           ]}
         >
-          <Text style={[styles.messageText, isUser && styles.userMessageText]}>
-            {message.content}
-          </Text>
-          {message.tool_calls && message.tool_calls.length > 0 && (
-            <View style={styles.toolContainer}>
-              {message.tool_calls.map((tool: any, idx: number) => (
-                <View key={idx} style={styles.toolBadge}>
-                  <Ionicons name="construct" size={12} color={uiConfig.accent_color} />
-                  <Text style={[styles.toolText, { color: uiConfig.accent_color }]}>
-                    {tool.name}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
+          <LinearGradient
+            colors={isUser ? [METALLIC.accent, '#4F46E5'] : [METALLIC.gunmetal, '#1F1F28']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.bubbleGradient}
+          >
+            <Text style={[styles.messageText, isUser && styles.userMessageText]}>
+              {message.content}
+            </Text>
+            {message.tool_calls && message.tool_calls.length > 0 && (
+              <View style={styles.toolContainer}>
+                {message.tool_calls.map((tool: any, idx: number) => (
+                  <View key={idx} style={styles.toolBadge}>
+                    <Ionicons name="construct" size={12} color={METALLIC.accent} />
+                    <Text style={styles.toolText}>{tool.name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+        
+        {/* Message Actions */}
+        {isSelected && (
+          <View style={styles.messageActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => copyMessage(message.content)}
+            >
+              <Ionicons name="copy-outline" size={18} color={METALLIC.chrome} />
+            </TouchableOpacity>
+            {!isUser && index === messages.length - 1 && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => regenerateMessage(index)}
+              >
+                <Ionicons name="refresh-outline" size={18} color={METALLIC.chrome} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </Animated.View>
     );
   };
 
   return (
-    <LinearGradient colors={uiConfig.background_gradient as any} style={styles.container}>
+    <LinearGradient
+      colors={['#0A0A0F', '#12121A', '#0A0A0F']}
+      style={styles.container}
+    >
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
-        <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-          <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
-            <Ionicons name="add-circle-outline" size={26} color={uiConfig.accent_color} />
-          </TouchableOpacity>
+        <View style={styles.header}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
+            style={styles.headerGradient}
+          >
+            <TouchableOpacity onPress={() => router.push('/history')} style={styles.headerButton}>
+              <Ionicons name="time-outline" size={24} color={METALLIC.silver} />
+            </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push('/settings')} style={styles.agentInfo}>
-            <Animated.View
-              style={[
-                styles.avatarContainer,
-                { transform: [{ scale: pulseAnim }] },
-              ]}
-            >
-              <LinearGradient
-                colors={[agent.avatar_color, agent.avatar_color + '80']}
-                style={styles.avatarGradient}
+            <TouchableOpacity onPress={() => router.push('/settings')} style={styles.agentInfo}>
+              <Animated.View
+                style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}
               >
-                <Ionicons name={getAvatarIcon(agent.avatar)} size={28} color="#fff" />
-              </LinearGradient>
-            </Animated.View>
-            <View style={styles.agentTextContainer}>
-              <Text style={styles.agentName}>{agent.name}</Text>
-              <View style={styles.statusContainer}>
-                <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
-                <Text style={styles.statusText}>Online</Text>
+                <LinearGradient
+                  colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
+                  style={styles.avatarGradient}
+                >
+                  <View style={styles.avatarInner}>
+                    <Ionicons name={getAvatarIcon(agent.avatar)} size={26} color={METALLIC.chrome} />
+                  </View>
+                  <View style={styles.avatarRing} />
+                </LinearGradient>
+              </Animated.View>
+              <View style={styles.agentTextContainer}>
+                <Text style={styles.agentName}>{agent.name}</Text>
+                <View style={styles.statusContainer}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.statusText}>{agent.model.split('-')[0]}</Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push('/ui-editor')} style={styles.headerButton}>
-            <Ionicons name="color-palette-outline" size={26} color={uiConfig.accent_color} />
-          </TouchableOpacity>
-        </Animated.View>
+            <View style={styles.headerRight}>
+              <TouchableOpacity onPress={() => router.push('/tools')} style={styles.headerButton}>
+                <Ionicons name="construct-outline" size={24} color={METALLIC.silver} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
+                <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
 
         {/* Messages */}
         <KeyboardAvoidingView
@@ -304,36 +387,60 @@ export default function ChatScreen() {
             contentContainerStyle={styles.messagesContent}
             showsVerticalScrollIndicator={false}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={uiConfig.accent_color} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={METALLIC.silver} />
             }
           >
             {messages.length === 0 ? (
               <View style={styles.emptyState}>
                 <Animated.View style={[styles.emptyAvatar, { transform: [{ scale: pulseAnim }] }]}>
                   <LinearGradient
-                    colors={[agent.avatar_color, uiConfig.accent_color]}
+                    colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                     style={styles.emptyAvatarGradient}
                   >
-                    <Ionicons name={getAvatarIcon(agent.avatar)} size={60} color="#fff" />
+                    <View style={styles.emptyAvatarInner}>
+                      <Ionicons name={getAvatarIcon(agent.avatar)} size={50} color={METALLIC.chrome} />
+                    </View>
+                    <View style={styles.emptyAvatarRing} />
                   </LinearGradient>
                 </Animated.View>
-                <Text style={styles.emptyTitle}>Hi, I'm {agent.name}</Text>
+                <Text style={styles.emptyTitle}>Meet {agent.name}</Text>
                 <Text style={styles.emptySubtitle}>
-                  Your intelligent assistant with tool generation capabilities.
-                  Ask me anything!
+                  Advanced AI with dynamic tool generation.
+                  Ready to assist.
                 </Text>
                 <View style={styles.suggestionContainer}>
-                  {['What can you do?', 'Generate a tool', 'Tell me a joke'].map((suggestion, idx) => (
+                  {['Capabilities', 'Generate a tool', 'Analyze data'].map((suggestion, idx) => (
                     <TouchableOpacity
                       key={idx}
-                      style={[styles.suggestionChip, { borderColor: uiConfig.primary_color + '50' }]}
-                      onPress={() => setInputText(suggestion)}
+                      style={styles.suggestionChip}
+                      onPress={() => setInputText(suggestion === 'Capabilities' ? 'What can you do?' : suggestion)}
                     >
-                      <Text style={[styles.suggestionText, { color: uiConfig.primary_color }]}>
-                        {suggestion}
-                      </Text>
+                      <LinearGradient
+                        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
+                        style={styles.suggestionGradient}
+                      >
+                        <Text style={styles.suggestionText}>{suggestion}</Text>
+                      </LinearGradient>
                     </TouchableOpacity>
                   ))}
+                </View>
+                
+                {/* Quick Stats */}
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>{agent.model.split('-')[0]}</Text>
+                    <Text style={styles.statLabel}>Model</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>{agent.temperature}</Text>
+                    <Text style={styles.statLabel}>Temp</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>∞</Text>
+                    <Text style={styles.statLabel}>Tools</Text>
+                  </View>
                 </View>
               </View>
             ) : (
@@ -341,12 +448,24 @@ export default function ChatScreen() {
             )}
             {isLoading && (
               <View style={styles.loadingContainer}>
-                <View style={[styles.avatarSmall, { backgroundColor: agent.avatar_color + '30' }]}>
-                  <Ionicons name={getAvatarIcon(agent.avatar)} size={18} color={agent.avatar_color} />
-                </View>
-                <View style={[styles.typingIndicator, { backgroundColor: uiConfig.chat_bubble_assistant }]}>
-                  <ActivityIndicator size="small" color={uiConfig.accent_color} />
-                  <Text style={styles.typingText}>Thinking...</Text>
+                <LinearGradient
+                  colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
+                  style={styles.avatarSmall}
+                >
+                  <Ionicons name={getAvatarIcon(agent.avatar)} size={16} color={METALLIC.chrome} />
+                </LinearGradient>
+                <View style={styles.typingIndicator}>
+                  <LinearGradient
+                    colors={[METALLIC.gunmetal, '#1F1F28']}
+                    style={styles.typingGradient}
+                  >
+                    <View style={styles.typingDots}>
+                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
+                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
+                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
+                    </View>
+                    <Text style={styles.typingText}>Processing</Text>
+                  </LinearGradient>
                 </View>
               </View>
             )}
@@ -354,27 +473,40 @@ export default function ChatScreen() {
 
           {/* Input */}
           <View style={styles.inputWrapper}>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Message..."
-                placeholderTextColor="#6B7280"
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                maxLength={2000}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  { backgroundColor: inputText.trim() ? uiConfig.primary_color : '#374151' },
-                ]}
-                onPress={sendMessage}
-                disabled={!inputText.trim() || isLoading}
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
+              style={styles.inputGradient}
+            >
+              <View style={styles.inputContainer}>
+                <TouchableOpacity style={styles.inputIcon} onPress={() => router.push('/ui-editor')}>
+                  <Ionicons name="color-palette-outline" size={22} color={METALLIC.titanium} />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Message..."
+                  placeholderTextColor={METALLIC.titanium}
+                  value={inputText}
+                  onChangeText={setInputText}
+                  multiline
+                  maxLength={2000}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    !inputText.trim() && styles.sendButtonDisabled,
+                  ]}
+                  onPress={sendMessage}
+                  disabled={!inputText.trim() || isLoading}
+                >
+                  <LinearGradient
+                    colors={inputText.trim() ? [METALLIC.accent, '#4F46E5'] : [METALLIC.gunmetal, METALLIC.darkSteel]}
+                    style={styles.sendGradient}
+                  >
+                    <Ionicons name="arrow-up" size={20} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -390,16 +522,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  headerGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   headerButton: {
     padding: 8,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   agentInfo: {
     flexDirection: 'row',
@@ -416,14 +554,32 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  avatarInner: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: METALLIC.darkSteel,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRing: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   agentTextContainer: {
     alignItems: 'flex-start',
   },
   agentName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
+    color: METALLIC.platinum,
+    letterSpacing: 0.5,
   },
   statusContainer: {
     flexDirection: 'row',
@@ -431,14 +587,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
     marginRight: 6,
   },
   statusText: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: 11,
+    color: METALLIC.titanium,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   chatContainer: {
     flex: 1,
@@ -462,18 +621,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   avatarSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   messageBubble: {
     maxWidth: width * 0.75,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   userBubble: {
     borderBottomRightRadius: 4,
@@ -481,9 +639,13 @@ const styles = StyleSheet.create({
   assistantBubble: {
     borderBottomLeftRadius: 4,
   },
+  bubbleGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
   messageText: {
     fontSize: 15,
-    color: '#E5E7EB',
+    color: METALLIC.platinum,
     lineHeight: 22,
   },
   userMessageText: {
@@ -492,68 +654,142 @@ const styles = StyleSheet.create({
   toolContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    marginTop: 10,
     gap: 6,
   },
   toolBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
     gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
   },
   toolText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+    color: METALLIC.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    marginLeft: 8,
+    gap: 4,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: METALLIC.gunmetal,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: height * 0.1,
+    paddingTop: height * 0.08,
   },
   emptyAvatar: {
     marginBottom: 24,
   },
   emptyAvatarGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  emptyAvatarInner: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: METALLIC.darkSteel,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyAvatarRing: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
   emptyTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 26,
+    fontWeight: '600',
+    color: METALLIC.platinum,
     marginBottom: 8,
+    letterSpacing: 0.5,
   },
   emptySubtitle: {
-    fontSize: 16,
-    color: '#9CA3AF',
+    fontSize: 15,
+    color: METALLIC.titanium,
     textAlign: 'center',
     paddingHorizontal: 40,
-    lineHeight: 24,
+    lineHeight: 22,
   },
   suggestionContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 28,
     gap: 10,
   },
   suggestionChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  suggestionGradient: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderRadius: 20,
     borderWidth: 1,
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   suggestionText: {
     fontSize: 14,
     fontWeight: '500',
+    color: METALLIC.silver,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 32,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  statItem: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: METALLIC.platinum,
+    textTransform: 'capitalize',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: METALLIC.titanium,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   loadingContainer: {
     flexDirection: 'row',
@@ -561,43 +797,68 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   typingIndicator: {
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    overflow: 'hidden',
+  },
+  typingGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 20,
-    borderBottomLeftRadius: 4,
-    gap: 8,
+    gap: 10,
+  },
+  typingDots: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: METALLIC.silver,
   },
   typingText: {
-    fontSize: 14,
-    color: '#9CA3AF',
+    fontSize: 13,
+    color: METALLIC.titanium,
+    letterSpacing: 0.5,
   },
   inputWrapper: {
     paddingHorizontal: 16,
     paddingBottom: Platform.OS === 'ios' ? 8 : 16,
     paddingTop: 8,
   },
+  inputGradient: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: '#1F2937',
-    borderRadius: 24,
-    paddingLeft: 16,
+    paddingLeft: 6,
     paddingRight: 6,
     paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  inputIcon: {
+    padding: 10,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#fff',
+    color: METALLIC.platinum,
     maxHeight: 100,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   sendButton: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  sendButtonDisabled: {
+    opacity: 0.6,
+  },
+  sendGradient: {
     width: 40,
     height: 40,
     borderRadius: 20,

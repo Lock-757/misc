@@ -18,26 +18,38 @@ import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
+const METALLIC = {
+  chrome: '#C0C0C8',
+  silver: '#A8A8B0',
+  gunmetal: '#2A2A32',
+  darkSteel: '#18181D',
+  titanium: '#878792',
+  platinum: '#E5E5EA',
+  accent: '#6366F1',
+};
+
 const AVATARS = [
-  { id: 'planet', icon: 'planet', label: 'Planet' },
-  { id: 'robot', icon: 'hardware-chip', label: 'Robot' },
-  { id: 'sparkles', icon: 'sparkles', label: 'Sparkles' },
-  { id: 'flash', icon: 'flash', label: 'Flash' },
-  { id: 'diamond', icon: 'diamond', label: 'Diamond' },
-  { id: 'flame', icon: 'flame', label: 'Flame' },
+  { id: 'planet', icon: 'planet' },
+  { id: 'robot', icon: 'hardware-chip' },
+  { id: 'sparkles', icon: 'sparkles' },
+  { id: 'flash', icon: 'flash' },
+  { id: 'diamond', icon: 'diamond' },
+  { id: 'flame', icon: 'flame' },
+  { id: 'cube', icon: 'cube' },
+  { id: 'prism', icon: 'prism' },
 ];
 
 const COLORS = [
-  '#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC4899',
-  '#6366F1', '#14B8A6', '#84CC16', '#F97316', '#F43F5E', '#A855F7',
+  '#7C7C8A', '#6366F1', '#8B5CF6', '#06B6D4', '#10B981', '#F59E0B',
+  '#EF4444', '#EC4899', '#A855F7', '#14B8A6', '#F97316', '#84CC16',
 ];
 
 const MODELS = [
-  { id: 'grok-3-latest', label: 'Grok 3 (Latest)', provider: 'xAI' },
-  { id: 'grok-3-fast', label: 'Grok 3 Fast', provider: 'xAI' },
-  { id: 'grok-2', label: 'Grok 2', provider: 'xAI' },
-  { id: 'claude-placeholder', label: 'Claude (Coming Soon)', provider: 'Anthropic', disabled: true },
-  { id: 'kimi-placeholder', label: 'Kimi (Coming Soon)', provider: 'Moonshot', disabled: true },
+  { id: 'grok-3-latest', label: 'Grok 3', sublabel: 'Latest', provider: 'xAI' },
+  { id: 'grok-3-fast', label: 'Grok 3', sublabel: 'Fast', provider: 'xAI' },
+  { id: 'grok-2', label: 'Grok 2', sublabel: 'Standard', provider: 'xAI' },
+  { id: 'claude-placeholder', label: 'Claude', sublabel: 'Soon', provider: 'Anthropic', disabled: true },
+  { id: 'kimi-placeholder', label: 'Kimi', sublabel: 'Soon', provider: 'Moonshot', disabled: true },
 ];
 
 interface Agent {
@@ -57,10 +69,9 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Form state
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('planet');
-  const [avatarColor, setAvatarColor] = useState('#8B5CF6');
+  const [avatarColor, setAvatarColor] = useState('#7C7C8A');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [personality, setPersonality] = useState('');
   const [model, setModel] = useState('grok-3-latest');
@@ -120,10 +131,9 @@ export default function SettingsScreen() {
           temperature,
         });
       }
-      Alert.alert('Success', 'Agent settings saved!');
+      Alert.alert('Saved', 'Agent configuration updated');
       router.back();
     } catch (error) {
-      console.error('Save error:', error);
       Alert.alert('Error', 'Failed to save settings');
     } finally {
       setIsSaving(false);
@@ -137,7 +147,7 @@ export default function SettingsScreen() {
 
   if (isLoading) {
     return (
-      <LinearGradient colors={['#0F0F1A', '#1A1A2E', '#16213E']} style={styles.container}>
+      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
         <SafeAreaView style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </SafeAreaView>
@@ -146,20 +156,25 @@ export default function SettingsScreen() {
   }
 
   return (
-    <LinearGradient colors={['#0F0F1A', '#1A1A2E', '#16213E']} style={styles.container}>
+    <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#fff" />
+            <Ionicons name="chevron-back" size={26} color={METALLIC.platinum} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Agent Settings</Text>
+          <Text style={styles.headerTitle}>Agent Config</Text>
           <TouchableOpacity
             onPress={saveAgent}
             style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
             disabled={isSaving}
           >
-            <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
+            <LinearGradient
+              colors={[METALLIC.accent, '#4F46E5']}
+              style={styles.saveGradient}
+            >
+              <Text style={styles.saveButtonText}>{isSaving ? '...' : 'Save'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -174,27 +189,32 @@ export default function SettingsScreen() {
             {/* Agent Preview */}
             <View style={styles.previewContainer}>
               <LinearGradient
-                colors={[avatarColor, avatarColor + '80']}
+                colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                 style={styles.previewAvatar}
               >
-                <Ionicons name={getAvatarIcon(avatar)} size={48} color="#fff" />
+                <View style={[styles.previewAvatarInner, { borderColor: avatarColor }]}>
+                  <Ionicons name={getAvatarIcon(avatar)} size={40} color={avatarColor} />
+                </View>
               </LinearGradient>
-              <Text style={styles.previewName}>{name || 'Unnamed Agent'}</Text>
-              <Text style={styles.previewModel}>
-                {MODELS.find(m => m.id === model)?.label || model}
-              </Text>
+              <Text style={styles.previewName}>{name || 'Agent'}</Text>
+              <View style={styles.previewBadge}>
+                <Text style={styles.previewModel}>
+                  {MODELS.find(m => m.id === model)?.label || 'Grok'}
+                </Text>
+              </View>
             </View>
 
             {/* Name */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Name</Text>
+              <Text style={styles.sectionTitle}>Identity</Text>
               <View style={styles.inputContainer}>
+                <Ionicons name="person-outline" size={20} color={METALLIC.titanium} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   value={name}
                   onChangeText={setName}
-                  placeholder="Enter agent name"
-                  placeholderTextColor="#6B7280"
+                  placeholder="Agent name"
+                  placeholderTextColor={METALLIC.titanium}
                 />
               </View>
             </View>
@@ -208,23 +228,23 @@ export default function SettingsScreen() {
                     key={av.id}
                     style={[
                       styles.avatarOption,
-                      avatar === av.id && { borderColor: avatarColor, borderWidth: 2 },
+                      avatar === av.id && styles.avatarOptionSelected,
                     ]}
                     onPress={() => setAvatar(av.id)}
                   >
                     <Ionicons
                       name={av.icon as keyof typeof Ionicons.glyphMap}
-                      size={28}
-                      color={avatar === av.id ? avatarColor : '#9CA3AF'}
+                      size={26}
+                      color={avatar === av.id ? avatarColor : METALLIC.titanium}
                     />
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Avatar Color */}
+            {/* Color */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Color</Text>
+              <Text style={styles.sectionTitle}>Accent Color</Text>
               <View style={styles.colorGrid}>
                 {COLORS.map((color) => (
                   <TouchableOpacity
@@ -237,7 +257,7 @@ export default function SettingsScreen() {
                     onPress={() => setAvatarColor(color)}
                   >
                     {avatarColor === color && (
-                      <Ionicons name="checkmark" size={18} color="#fff" />
+                      <Ionicons name="checkmark" size={16} color="#fff" />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -253,16 +273,24 @@ export default function SettingsScreen() {
                     key={m.id}
                     style={[
                       styles.modelOption,
-                      model === m.id && { borderColor: '#8B5CF6', borderWidth: 2 },
+                      model === m.id && styles.modelOptionSelected,
                       m.disabled && styles.modelDisabled,
                     ]}
                     onPress={() => !m.disabled && setModel(m.id)}
                     disabled={m.disabled}
                   >
-                    <Text style={[styles.modelLabel, m.disabled && styles.modelLabelDisabled]}>
-                      {m.label}
-                    </Text>
+                    <View style={styles.modelInfo}>
+                      <Text style={[styles.modelLabel, m.disabled && styles.modelLabelDisabled]}>
+                        {m.label}
+                      </Text>
+                      <Text style={styles.modelSublabel}>{m.sublabel}</Text>
+                    </View>
                     <Text style={styles.modelProvider}>{m.provider}</Text>
+                    {model === m.id && (
+                      <View style={styles.modelCheck}>
+                        <Ionicons name="checkmark-circle" size={20} color={METALLIC.accent} />
+                      </View>
+                    )}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -272,7 +300,9 @@ export default function SettingsScreen() {
             <View style={styles.section}>
               <View style={styles.tempHeader}>
                 <Text style={styles.sectionTitle}>Temperature</Text>
-                <Text style={styles.tempValue}>{temperature.toFixed(1)}</Text>
+                <View style={styles.tempValueBadge}>
+                  <Text style={styles.tempValue}>{temperature.toFixed(1)}</Text>
+                </View>
               </View>
               <View style={styles.tempSlider}>
                 {[0.1, 0.3, 0.5, 0.7, 0.9, 1.0].map((temp) => (
@@ -280,7 +310,7 @@ export default function SettingsScreen() {
                     key={temp}
                     style={[
                       styles.tempDot,
-                      temperature === temp && { backgroundColor: '#8B5CF6' },
+                      temperature === temp && styles.tempDotActive,
                     ]}
                     onPress={() => setTemperature(temp)}
                   />
@@ -296,12 +326,13 @@ export default function SettingsScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Personality</Text>
               <View style={styles.inputContainer}>
+                <Ionicons name="heart-outline" size={20} color={METALLIC.titanium} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   value={personality}
                   onChangeText={setPersonality}
-                  placeholder="e.g., Friendly and professional"
-                  placeholderTextColor="#6B7280"
+                  placeholder="e.g., Professional and precise"
+                  placeholderTextColor={METALLIC.titanium}
                 />
               </View>
             </View>
@@ -314,8 +345,8 @@ export default function SettingsScreen() {
                   style={[styles.input, styles.textArea]}
                   value={systemPrompt}
                   onChangeText={setSystemPrompt}
-                  placeholder="Define your agent's behavior and capabilities..."
-                  placeholderTextColor="#6B7280"
+                  placeholder="Define agent behavior and capabilities..."
+                  placeholderTextColor={METALLIC.titanium}
                   multiline
                   numberOfLines={6}
                   textAlignVertical="top"
@@ -332,21 +363,10 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    color: '#fff',
-    fontSize: 16,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { color: METALLIC.platinum, fontSize: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -354,181 +374,158 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  backButton: {
-    padding: 4,
-  },
+  backButton: { padding: 4 },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  saveButton: {
-    backgroundColor: '#8B5CF6',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: '#fff',
+    fontSize: 17,
     fontWeight: '600',
-    fontSize: 14,
+    color: METALLIC.platinum,
+    letterSpacing: 0.5,
   },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-  },
-  previewContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
+  saveButton: { borderRadius: 16, overflow: 'hidden' },
+  saveButtonDisabled: { opacity: 0.6 },
+  saveGradient: { paddingHorizontal: 18, paddingVertical: 8 },
+  saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  content: { flex: 1 },
+  scrollContent: { padding: 20 },
+  previewContainer: { alignItems: 'center', marginBottom: 32 },
   previewAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+  },
+  previewAvatarInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: METALLIC.darkSteel,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
   },
   previewName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  previewModel: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 14,
+    fontSize: 22,
     fontWeight: '600',
-    color: '#9CA3AF',
+    color: METALLIC.platinum,
+    marginBottom: 6,
+  },
+  previewBadge: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  previewModel: { fontSize: 12, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  section: { marginBottom: 24 },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: METALLIC.titanium,
     marginBottom: 12,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   inputContainer: {
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
+  inputIcon: { marginLeft: 14 },
   input: {
-    paddingHorizontal: 16,
+    flex: 1,
+    paddingHorizontal: 12,
     paddingVertical: 14,
     fontSize: 16,
-    color: '#fff',
+    color: METALLIC.platinum,
   },
-  textAreaContainer: {
-    minHeight: 140,
-  },
-  textArea: {
-    minHeight: 120,
-    paddingTop: 14,
-  },
-  avatarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
+  textAreaContainer: { minHeight: 130, alignItems: 'flex-start' },
+  textArea: { minHeight: 110, paddingTop: 14, textAlignVertical: 'top' },
+  avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   avatarOption: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1F2937',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.04)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  colorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  avatarOptionSelected: {
+    borderColor: METALLIC.accent,
+    borderWidth: 2,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
   },
+  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   colorOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  colorOptionSelected: {
-    borderWidth: 3,
-    borderColor: '#fff',
-  },
-  modelGrid: {
-    gap: 10,
-  },
+  colorOptionSelected: { borderWidth: 3, borderColor: '#fff' },
+  modelGrid: { gap: 8 },
   modelOption: {
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  modelDisabled: {
-    opacity: 0.5,
-  },
-  modelLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  modelLabelDisabled: {
-    color: '#6B7280',
-  },
-  modelProvider: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  tempHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  tempValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#8B5CF6',
+  modelOptionSelected: {
+    borderColor: METALLIC.accent,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
   },
+  modelDisabled: { opacity: 0.4 },
+  modelInfo: { flex: 1 },
+  modelLabel: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum },
+  modelLabelDisabled: { color: METALLIC.titanium },
+  modelSublabel: { fontSize: 12, color: METALLIC.titanium, marginTop: 2 },
+  modelProvider: {
+    fontSize: 11,
+    color: METALLIC.titanium,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginRight: 8,
+  },
+  modelCheck: { marginLeft: 4 },
+  tempHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  tempValueBadge: {
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  tempValue: { fontSize: 14, fontWeight: '600', color: METALLIC.accent },
   tempSlider: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#1F2937',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 20,
-    padding: 8,
-    paddingHorizontal: 16,
+    padding: 10,
+    paddingHorizontal: 18,
   },
   tempDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#374151',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: METALLIC.gunmetal,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  tempLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  tempLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  bottomSpacing: {
-    height: 40,
-  },
+  tempDotActive: { backgroundColor: METALLIC.accent, borderColor: METALLIC.accent },
+  tempLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  tempLabel: { fontSize: 11, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  bottomSpacing: { height: 40 },
 });

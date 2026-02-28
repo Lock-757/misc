@@ -15,95 +15,84 @@ import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
+const METALLIC = {
+  chrome: '#C0C0C8',
+  silver: '#A8A8B0',
+  gunmetal: '#2A2A32',
+  darkSteel: '#18181D',
+  titanium: '#878792',
+  platinum: '#E5E5EA',
+  accent: '#6366F1',
+};
+
 const THEME_PRESETS = [
   {
-    id: 'midnight',
-    name: 'Midnight Purple',
-    primary_color: '#8B5CF6',
-    accent_color: '#06B6D4',
-    background_gradient: ['#0F0F1A', '#1A1A2E', '#16213E'],
-    chat_bubble_user: '#8B5CF6',
-    chat_bubble_assistant: '#1E1E2E',
+    id: 'steel',
+    name: 'Steel',
+    primary_color: '#6366F1',
+    accent_color: '#8B5CF6',
+    background_gradient: ['#0A0A0F', '#12121A', '#0A0A0F'],
+    chat_bubble_user: '#6366F1',
+    chat_bubble_assistant: '#2A2A32',
   },
   {
-    id: 'ocean',
-    name: 'Ocean Blue',
+    id: 'titanium',
+    name: 'Titanium',
+    primary_color: '#7C7C8A',
+    accent_color: '#A8A8B0',
+    background_gradient: ['#0D0D12', '#16161D', '#0D0D12'],
+    chat_bubble_user: '#7C7C8A',
+    chat_bubble_assistant: '#252530',
+  },
+  {
+    id: 'cobalt',
+    name: 'Cobalt',
     primary_color: '#3B82F6',
-    accent_color: '#10B981',
-    background_gradient: ['#0A1628', '#1E3A5F', '#0F4C81'],
+    accent_color: '#60A5FA',
+    background_gradient: ['#08101A', '#101828', '#08101A'],
     chat_bubble_user: '#3B82F6',
-    chat_bubble_assistant: '#1A2D4A',
+    chat_bubble_assistant: '#1E293B',
   },
   {
-    id: 'sunset',
-    name: 'Sunset Glow',
-    primary_color: '#F59E0B',
-    accent_color: '#EF4444',
-    background_gradient: ['#1A0F0F', '#2D1F1F', '#3D2A2A'],
-    chat_bubble_user: '#F59E0B',
-    chat_bubble_assistant: '#2A1A1A',
-  },
-  {
-    id: 'forest',
-    name: 'Forest Night',
+    id: 'carbon',
+    name: 'Carbon',
     primary_color: '#10B981',
-    accent_color: '#84CC16',
-    background_gradient: ['#0A1A14', '#142E23', '#1A3D2E'],
+    accent_color: '#34D399',
+    background_gradient: ['#0A0F0D', '#121A16', '#0A0F0D'],
     chat_bubble_user: '#10B981',
-    chat_bubble_assistant: '#152E22',
+    chat_bubble_assistant: '#1A2A22',
+  },
+  {
+    id: 'copper',
+    name: 'Copper',
+    primary_color: '#F59E0B',
+    accent_color: '#FBBF24',
+    background_gradient: ['#0F0D0A', '#1A1610', '#0F0D0A'],
+    chat_bubble_user: '#F59E0B',
+    chat_bubble_assistant: '#2A251A',
   },
   {
     id: 'rose',
     name: 'Rose Gold',
     primary_color: '#EC4899',
     accent_color: '#F472B6',
-    background_gradient: ['#1A0F14', '#2D1A22', '#3D2430'],
+    background_gradient: ['#0F0A0D', '#1A1016', '#0F0A0D'],
     chat_bubble_user: '#EC4899',
-    chat_bubble_assistant: '#2A1520',
+    chat_bubble_assistant: '#2A1A22',
   },
-  {
-    id: 'cyber',
-    name: 'Cyberpunk',
-    primary_color: '#06B6D4',
-    accent_color: '#F43F5E',
-    background_gradient: ['#0A0F14', '#14202E', '#1A2A3D'],
-    chat_bubble_user: '#06B6D4',
-    chat_bubble_assistant: '#15202A',
-  },
-];
-
-const PRIMARY_COLORS = [
-  '#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#84CC16',
-  '#F59E0B', '#EF4444', '#F43F5E', '#EC4899', '#A855F7',
 ];
 
 const ACCENT_COLORS = [
-  '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC4899',
-  '#8B5CF6', '#3B82F6', '#84CC16', '#F472B6', '#A855F7',
+  '#6366F1', '#8B5CF6', '#3B82F6', '#06B6D4', '#10B981',
+  '#F59E0B', '#EF4444', '#EC4899', '#7C7C8A', '#A855F7',
 ];
-
-interface UIConfig {
-  id: string;
-  theme: string;
-  primary_color: string;
-  accent_color: string;
-  background_gradient: string[];
-  chat_bubble_user: string;
-  chat_bubble_assistant: string;
-  font_size: string;
-  animations_enabled: boolean;
-}
 
 export default function UIEditorScreen() {
   const router = useRouter();
-  const [config, setConfig] = useState<UIConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-
-  // Custom settings
-  const [primaryColor, setPrimaryColor] = useState('#8B5CF6');
-  const [accentColor, setAccentColor] = useState('#06B6D4');
+  const [selectedPreset, setSelectedPreset] = useState('steel');
+  const [primaryColor, setPrimaryColor] = useState('#6366F1');
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
 
   useEffect(() => {
@@ -113,15 +102,11 @@ export default function UIEditorScreen() {
   const loadConfig = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/ui-config`);
-      setConfig(res.data);
       setPrimaryColor(res.data.primary_color);
-      setAccentColor(res.data.accent_color);
       setAnimationsEnabled(res.data.animations_enabled);
       
-      // Check if current config matches a preset
       const matchingPreset = THEME_PRESETS.find(
-        p => p.primary_color === res.data.primary_color &&
-             JSON.stringify(p.background_gradient) === JSON.stringify(res.data.background_gradient)
+        p => p.primary_color === res.data.primary_color
       );
       if (matchingPreset) {
         setSelectedPreset(matchingPreset.id);
@@ -133,32 +118,28 @@ export default function UIEditorScreen() {
     }
   };
 
-  const applyPreset = async (preset: typeof THEME_PRESETS[0]) => {
+  const applyPreset = (preset: typeof THEME_PRESETS[0]) => {
     setSelectedPreset(preset.id);
     setPrimaryColor(preset.primary_color);
-    setAccentColor(preset.accent_color);
   };
 
   const saveConfig = async () => {
     setIsSaving(true);
     try {
       const preset = THEME_PRESETS.find(p => p.id === selectedPreset);
-      const updateData = {
+      await axios.put(`${API_URL}/api/ui-config`, {
         primary_color: primaryColor,
-        accent_color: accentColor,
+        accent_color: preset?.accent_color || primaryColor,
         chat_bubble_user: primaryColor,
         animations_enabled: animationsEnabled,
         ...(preset && {
           background_gradient: preset.background_gradient,
           chat_bubble_assistant: preset.chat_bubble_assistant,
         }),
-      };
-
-      await axios.put(`${API_URL}/api/ui-config`, updateData);
-      Alert.alert('Success', 'UI settings saved! Changes will apply on restart.');
+      });
+      Alert.alert('Saved', 'UI configuration updated');
       router.back();
     } catch (error) {
-      console.error('Save error:', error);
       Alert.alert('Error', 'Failed to save settings');
     } finally {
       setIsSaving(false);
@@ -167,12 +148,12 @@ export default function UIEditorScreen() {
 
   const getCurrentGradient = () => {
     const preset = THEME_PRESETS.find(p => p.id === selectedPreset);
-    return preset?.background_gradient || ['#0F0F1A', '#1A1A2E', '#16213E'];
+    return preset?.background_gradient || ['#0A0A0F', '#12121A', '#0A0A0F'];
   };
 
   if (isLoading) {
     return (
-      <LinearGradient colors={['#0F0F1A', '#1A1A2E', '#16213E']} style={styles.container}>
+      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
         <SafeAreaView style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </SafeAreaView>
@@ -186,15 +167,20 @@ export default function UIEditorScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#fff" />
+            <Ionicons name="chevron-back" size={26} color={METALLIC.platinum} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>UI Editor</Text>
+          <Text style={styles.headerTitle}>Appearance</Text>
           <TouchableOpacity
             onPress={saveConfig}
-            style={[styles.saveButton, { backgroundColor: primaryColor }, isSaving && styles.saveButtonDisabled]}
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
             disabled={isSaving}
           >
-            <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
+            <LinearGradient
+              colors={[primaryColor, primaryColor + 'DD']}
+              style={styles.saveGradient}
+            >
+              <Text style={styles.saveButtonText}>{isSaving ? '...' : 'Apply'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -203,85 +189,61 @@ export default function UIEditorScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           {/* Preview */}
-          <View style={styles.previewSection}>
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Preview</Text>
-            <View style={[styles.previewCard, { borderColor: primaryColor + '40' }]}>
-              <View style={styles.previewHeader}>
-                <View style={[styles.previewAvatar, { backgroundColor: primaryColor }]}>
-                  <Ionicons name="planet" size={24} color="#fff" />
-                </View>
-                <View>
-                  <Text style={styles.previewName}>Nova</Text>
-                  <View style={styles.previewStatus}>
-                    <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
-                    <Text style={styles.statusText}>Online</Text>
+            <View style={styles.previewCard}>
+              <LinearGradient
+                colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
+                style={styles.previewGradient}
+              >
+                <View style={styles.previewHeader}>
+                  <View style={[styles.previewAvatar, { backgroundColor: primaryColor + '30' }]}>
+                    <Ionicons name="planet" size={22} color={primaryColor} />
+                  </View>
+                  <View>
+                    <Text style={styles.previewName}>Nova</Text>
+                    <View style={styles.previewStatus}>
+                      <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                      <Text style={styles.statusText}>Online</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              <View style={styles.previewMessages}>
-                <View style={[styles.previewBubbleAssistant]}>
-                  <Text style={styles.bubbleText}>Hello! How can I help?</Text>
+                <View style={styles.previewMessages}>
+                  <View style={styles.previewBubbleAssistant}>
+                    <Text style={styles.bubbleText}>How can I assist you?</Text>
+                  </View>
+                  <View style={[styles.previewBubbleUser, { backgroundColor: primaryColor }]}>
+                    <Text style={styles.bubbleTextUser}>Analyze this data</Text>
+                  </View>
                 </View>
-                <View style={[styles.previewBubbleUser, { backgroundColor: primaryColor }]}>
-                  <Text style={styles.bubbleTextUser}>Tell me about yourself</Text>
-                </View>
-              </View>
+              </LinearGradient>
             </View>
           </View>
 
-          {/* Theme Presets */}
+          {/* Themes */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Theme Presets</Text>
-            <View style={styles.presetGrid}>
+            <Text style={styles.sectionTitle}>Themes</Text>
+            <View style={styles.themeGrid}>
               {THEME_PRESETS.map((preset) => (
                 <TouchableOpacity
                   key={preset.id}
                   style={[
-                    styles.presetCard,
-                    selectedPreset === preset.id && { borderColor: preset.primary_color, borderWidth: 2 },
+                    styles.themeCard,
+                    selectedPreset === preset.id && styles.themeCardSelected,
                   ]}
                   onPress={() => applyPreset(preset)}
                 >
                   <LinearGradient
                     colors={preset.background_gradient as any}
-                    style={styles.presetGradient}
+                    style={styles.themePreview}
                   >
-                    <View style={[styles.presetDot, { backgroundColor: preset.primary_color }]} />
-                    <View style={[styles.presetDotSmall, { backgroundColor: preset.accent_color }]} />
+                    <View style={[styles.themeDot, { backgroundColor: preset.primary_color }]} />
                   </LinearGradient>
-                  <Text style={styles.presetName}>{preset.name}</Text>
+                  <Text style={styles.themeName}>{preset.name}</Text>
                   {selectedPreset === preset.id && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color={preset.primary_color}
-                      style={styles.presetCheck}
-                    />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Primary Color */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Primary Color</Text>
-            <View style={styles.colorGrid}>
-              {PRIMARY_COLORS.map((color) => (
-                <TouchableOpacity
-                  key={color}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: color },
-                    primaryColor === color && styles.colorSelected,
-                  ]}
-                  onPress={() => {
-                    setPrimaryColor(color);
-                    setSelectedPreset(null);
-                  }}
-                >
-                  {primaryColor === color && (
-                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <View style={[styles.themeCheck, { backgroundColor: preset.primary_color }]}>
+                      <Ionicons name="checkmark" size={12} color="#fff" />
+                    </View>
                   )}
                 </TouchableOpacity>
               ))}
@@ -298,29 +260,34 @@ export default function UIEditorScreen() {
                   style={[
                     styles.colorOption,
                     { backgroundColor: color },
-                    accentColor === color && styles.colorSelected,
+                    primaryColor === color && styles.colorSelected,
                   ]}
-                  onPress={() => setAccentColor(color)}
+                  onPress={() => {
+                    setPrimaryColor(color);
+                    setSelectedPreset('');
+                  }}
                 >
-                  {accentColor === color && (
-                    <Ionicons name="checkmark" size={18} color="#fff" />
+                  {primaryColor === color && (
+                    <Ionicons name="checkmark" size={16} color="#fff" />
                   )}
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* Animations Toggle */}
+          {/* Animations */}
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.toggleRow}
               onPress={() => setAnimationsEnabled(!animationsEnabled)}
             >
               <View style={styles.toggleInfo}>
-                <Ionicons name="sparkles" size={24} color={accentColor} />
+                <View style={[styles.toggleIcon, { backgroundColor: primaryColor + '20' }]}>
+                  <Ionicons name="sparkles" size={20} color={primaryColor} />
+                </View>
                 <View style={styles.toggleTextContainer}>
                   <Text style={styles.toggleTitle}>Animations</Text>
-                  <Text style={styles.toggleSubtitle}>Enable smooth transitions</Text>
+                  <Text style={styles.toggleSubtitle}>Smooth transitions</Text>
                 </View>
               </View>
               <View
@@ -329,12 +296,7 @@ export default function UIEditorScreen() {
                   animationsEnabled && { backgroundColor: primaryColor },
                 ]}
               >
-                <View
-                  style={[
-                    styles.toggleKnob,
-                    animationsEnabled && styles.toggleKnobActive,
-                  ]}
-                />
+                <View style={[styles.toggleKnob, animationsEnabled && styles.toggleKnobActive]} />
               </View>
             </TouchableOpacity>
           </View>
@@ -347,21 +309,10 @@ export default function UIEditorScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    color: '#fff',
-    fontSize: 16,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { color: METALLIC.platinum, fontSize: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -369,57 +320,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  saveButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  scrollContent: {
-    padding: 20,
-  },
-  section: {
-    marginBottom: 28,
-  },
-  previewSection: {
-    marginBottom: 28,
-  },
+  backButton: { padding: 4 },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: METALLIC.platinum, letterSpacing: 0.5 },
+  saveButton: { borderRadius: 16, overflow: 'hidden' },
+  saveButtonDisabled: { opacity: 0.6 },
+  saveGradient: { paddingHorizontal: 18, paddingVertical: 8 },
+  saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  scrollContent: { padding: 20 },
+  section: { marginBottom: 28 },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#9CA3AF',
+    color: METALLIC.titanium,
     marginBottom: 12,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   previewCard: {
-    backgroundColor: 'rgba(30, 30, 46, 0.8)',
     borderRadius: 16,
-    padding: 16,
+    overflow: 'hidden',
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
+  previewGradient: { padding: 16 },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   previewAvatar: {
     width: 44,
     height: 44,
@@ -428,31 +354,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  previewName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  previewStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  previewMessages: {
-    gap: 10,
-  },
+  previewName: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum },
+  previewStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  statusText: { fontSize: 11, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
+  previewMessages: { gap: 10 },
   previewBubbleAssistant: {
-    backgroundColor: 'rgba(31, 41, 55, 0.8)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
@@ -466,115 +374,80 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
     alignSelf: 'flex-end',
   },
-  bubbleText: {
-    color: '#E5E7EB',
-    fontSize: 14,
-  },
-  bubbleTextUser: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  presetGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  presetCard: {
+  bubbleText: { color: METALLIC.platinum, fontSize: 14 },
+  bubbleTextUser: { color: '#fff', fontSize: 14 },
+  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  themeCard: {
     width: '47%',
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  presetGradient: {
-    height: 60,
-    flexDirection: 'row',
+  themeCardSelected: { borderColor: METALLIC.accent, borderWidth: 2 },
+  themePreview: {
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   },
-  presetDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-  },
-  presetDotSmall: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
-  presetName: {
-    color: '#fff',
+  themeDot: { width: 20, height: 20, borderRadius: 10 },
+  themeName: {
+    color: METALLIC.platinum,
     fontSize: 13,
     fontWeight: '500',
     textAlign: 'center',
     paddingVertical: 10,
   },
-  presetCheck: {
+  themeCheck: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  colorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  colorOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  colorSelected: {
-    borderWidth: 3,
-    borderColor: '#fff',
+  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  colorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  colorSelected: { borderWidth: 3, borderColor: '#fff' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  toggleInfo: {
-    flexDirection: 'row',
+  toggleInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  toggleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
   },
-  toggleTextContainer: {
-    gap: 2,
-  },
-  toggleTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  toggleSubtitle: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
+  toggleTextContainer: { gap: 2 },
+  toggleTitle: { fontSize: 15, fontWeight: '600', color: METALLIC.platinum },
+  toggleSubtitle: { fontSize: 12, color: METALLIC.titanium },
   toggleSwitch: {
     width: 50,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#374151',
+    backgroundColor: METALLIC.gunmetal,
     padding: 2,
     justifyContent: 'center',
   },
-  toggleKnob: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-  },
-  toggleKnobActive: {
-    alignSelf: 'flex-end',
-  },
-  bottomSpacing: {
-    height: 40,
-  },
+  toggleKnob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },
+  toggleKnobActive: { alignSelf: 'flex-end' },
+  bottomSpacing: { height: 40 },
 });
