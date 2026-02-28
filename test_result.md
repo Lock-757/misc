@@ -342,13 +342,9 @@ frontend:
         comment: "New screen created for scheduled task management"
 
 test_plan:
-  current_focus:
-    - "Memory API"
-    - "Search API"
-    - "Chat API verification"
-    - "Agent Templates API"
+  current_focus: []
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
