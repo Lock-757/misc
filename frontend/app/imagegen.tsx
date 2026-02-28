@@ -546,4 +546,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: METALLIC.titanium,
   },
+  previewActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 20,
+  },
+  previewAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  previewActionDanger: {
+    backgroundColor: 'rgba(239,68,68,0.15)',
+  },
+  previewActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
 });
