@@ -607,6 +607,141 @@ export default function ChatScreen() {
             </LinearGradient>
           </View>
         </KeyboardAvoidingView>
+
+        {/* Features Menu Modal */}
+        <Modal visible={showMenu} transparent animationType="fade">
+          <TouchableOpacity 
+            style={styles.menuOverlay} 
+            activeOpacity={1} 
+            onPress={() => setShowMenu(false)}
+          >
+            <View style={styles.menuContainer}>
+              <LinearGradient
+                colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
+                style={styles.menuGradient}
+              >
+                <View style={styles.menuHeader}>
+                  <Text style={styles.menuTitle}>Features</Text>
+                  <TouchableOpacity onPress={() => setShowMenu(false)}>
+                    <Ionicons name="close" size={24} color={METALLIC.titanium} />
+                  </TouchableOpacity>
+                </View>
+                
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.menuScroll}>
+                  {/* Agents & Chat */}
+                  <Text style={styles.menuSectionTitle}>Agents & Chat</Text>
+                  <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
+                        <Ionicons name="people" size={22} color={METALLIC.accent} />
+                      </View>
+                      <Text style={styles.menuLabel}>Agents</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/templates'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
+                        <Ionicons name="albums" size={22} color="#8B5CF6" />
+                      </View>
+                      <Text style={styles.menuLabel}>Templates</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/history'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#06B6D4' + '20' }]}>
+                        <Ionicons name="time" size={22} color="#06B6D4" />
+                      </View>
+                      <Text style={styles.menuLabel}>History</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/search'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
+                        <Ionicons name="search" size={22} color="#F59E0B" />
+                      </View>
+                      <Text style={styles.menuLabel}>Search</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Memory & Data */}
+                  <Text style={styles.menuSectionTitle}>Memory & Data</Text>
+                  <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/memory'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#EC4899' + '20' }]}>
+                        <Ionicons name="hardware-chip" size={22} color="#EC4899" />
+                      </View>
+                      <Text style={styles.menuLabel}>Memory</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/bookmarks'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
+                        <Ionicons name="bookmark" size={22} color="#F59E0B" />
+                      </View>
+                      <Text style={styles.menuLabel}>Bookmarks</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/quick-replies'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#14B8A6' + '20' }]}>
+                        <Ionicons name="chatbubbles" size={22} color="#14B8A6" />
+                      </View>
+                      <Text style={styles.menuLabel}>Quick Replies</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/export'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#84CC16' + '20' }]}>
+                        <Ionicons name="download" size={22} color="#84CC16" />
+                      </View>
+                      <Text style={styles.menuLabel}>Export</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Creative & Tools */}
+                  <Text style={styles.menuSectionTitle}>Creative & Tools</Text>
+                  <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/imagegen'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.success + '20' }]}>
+                        <Ionicons name="image" size={22} color={METALLIC.success} />
+                      </View>
+                      <Text style={styles.menuLabel}>HD Images</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/image-editor'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#A855F7' + '20' }]}>
+                        <Ionicons name="brush" size={22} color="#A855F7" />
+                      </View>
+                      <Text style={styles.menuLabel}>Image Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/tools'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#F97316' + '20' }]}>
+                        <Ionicons name="construct" size={22} color="#F97316" />
+                      </View>
+                      <Text style={styles.menuLabel}>Tools</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/scheduled'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#EF4444' + '20' }]}>
+                        <Ionicons name="alarm" size={22} color="#EF4444" />
+                      </View>
+                      <Text style={styles.menuLabel}>Scheduled</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Settings */}
+                  <Text style={styles.menuSectionTitle}>Settings</Text>
+                  <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/settings'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#6B7280' + '20' }]}>
+                        <Ionicons name="settings" size={22} color="#6B7280" />
+                      </View>
+                      <Text style={styles.menuLabel}>Agent Config</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/ui-editor'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: '#3B82F6' + '20' }]}>
+                        <Ionicons name="color-palette" size={22} color="#3B82F6" />
+                      </View>
+                      <Text style={styles.menuLabel}>UI Editor</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/stats'); }}>
+                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
+                        <Ionicons name="analytics" size={22} color={METALLIC.accent} />
+                      </View>
+                      <Text style={styles.menuLabel}>Stats</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </LinearGradient>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
