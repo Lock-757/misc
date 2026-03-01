@@ -72,6 +72,7 @@ const METALLIC = {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ conversationId?: string; agentId?: string }>();
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -101,6 +102,30 @@ export default function ChatScreen() {
       }
     };
   }, []);
+
+  // Handle conversation resumption from history
+  useEffect(() => {
+    if (params.conversationId) {
+      loadConversation(params.conversationId);
+    }
+  }, [params.conversationId]);
+
+  const loadConversation = async (convId: string) => {
+    try {
+      const res = await axios.get(`${API_URL}/api/conversations/${convId}`);
+      if (res.data) {
+        setConversationId(res.data.id);
+        setMessages(res.data.messages || []);
+        // Scroll to bottom after loading messages
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    } catch (error) {
+      console.log('Error loading conversation:', error);
+      Alert.alert('Error', 'Could not load conversation');
+    }
+  };
 
   const setupAudio = async () => {
     try {
