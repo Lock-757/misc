@@ -41,12 +41,9 @@ export default function HistoryScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Reload when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadConversations();
-    }, [])
-  );
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
   const loadConversations = async () => {
     try {
