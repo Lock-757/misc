@@ -938,12 +938,12 @@ async def chat(request: ChatRequest):
     if request.conversation_id:
         convo = await db.conversations.find_one({"id": request.conversation_id})
         if not convo:
-            convo = Conversation(id=request.conversation_id, agent_id=request.agent_id, is_incognito=request.is_incognito)
+            convo = Conversation(id=request.conversation_id, agent_id=request.agent_id, user_id=request.user_id, is_incognito=request.is_incognito)
             await db.conversations.insert_one(convo.model_dump())
         else:
             convo = Conversation(**convo)
     else:
-        convo = Conversation(agent_id=request.agent_id, title=request.message[:50], is_incognito=request.is_incognito)
+        convo = Conversation(agent_id=request.agent_id, user_id=request.user_id, title=request.message[:50], is_incognito=request.is_incognito)
         await db.conversations.insert_one(convo.model_dump())
     
     # Add user message
