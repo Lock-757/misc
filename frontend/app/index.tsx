@@ -794,6 +794,32 @@ export default function ChatScreen() {
                       <Text style={styles.menuLabel}>Stats</Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Account */}
+                  <Text style={styles.menuSectionTitle}>Account</Text>
+                  <View style={styles.userCard}>
+                    <View style={styles.userInfo}>
+                      <View style={styles.userAvatar}>
+                        <Ionicons name="person" size={20} color={METALLIC.platinum} />
+                      </View>
+                      <View>
+                        <Text style={styles.userName}>{user?.name || 'User'}</Text>
+                        <Text style={styles.userEmail}>{user?.email || ''}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.logoutButton}
+                      onPress={() => {
+                        setShowMenu(false);
+                        Alert.alert('Logout', 'Are you sure you want to logout?', [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Logout', style: 'destructive', onPress: logout },
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="log-out-outline" size={20} color={METALLIC.danger} />
+                    </TouchableOpacity>
+                  </View>
                 </ScrollView>
               </LinearGradient>
             </View>
