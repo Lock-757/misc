@@ -428,7 +428,7 @@ async def login(request: LoginRequest, response: Response):
         max_age=7 * 24 * 60 * 60
     )
     
-    return {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "picture": user.get("picture")}
+    return {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "picture": user.get("picture"), "session_token": session_token}
 
 @api_router.post("/auth/google/session")
 async def google_auth_session(request: Request, response: Response):
