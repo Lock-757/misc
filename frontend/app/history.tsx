@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 11, color: METALLIC.titanium, marginTop: 2 },
   deleteButton: { padding: 8 },
   cardPreview: { fontSize: 13, color: METALLIC.silver, lineHeight: 20, marginBottom: 12 },
-  cardFooter: { flexDirection: 'row' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   messageBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,4 +292,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   messageCount: { fontSize: 11, color: METALLIC.titanium },
+  resumeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  resumeText: { fontSize: 11, color: METALLIC.accent, fontWeight: '500' },
 });
