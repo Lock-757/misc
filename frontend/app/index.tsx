@@ -565,79 +565,112 @@ export default function ChatScreen() {
           >
             {messages.length === 0 ? (
               <View style={styles.emptyState}>
-                <Animated.View style={[styles.emptyAvatar, { transform: [{ scale: pulseAnim }] }]}>
-                  <LinearGradient
-                    colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
-                    style={styles.emptyAvatarGradient}
-                  >
-                    <View style={styles.emptyAvatarInner}>
-                      <Ionicons name={getAvatarIcon(agent.avatar)} size={50} color={METALLIC.chrome} />
-                    </View>
-                    <View style={styles.emptyAvatarRing} />
-                  </LinearGradient>
-                </Animated.View>
-                <Text style={styles.emptyTitle}>Meet {agent.name}</Text>
-                <Text style={styles.emptySubtitle}>
-                  Advanced AI with dynamic tool generation.
-                  Ready to assist.
-                </Text>
-                <View style={styles.suggestionContainer}>
+                {/* Animated Background */}
+                <AnimatedBackground intensity="medium" />
+                
+                {/* Hero Section with 3D Effect */}
+                <View style={styles.heroSection}>
+                  <View style={styles.heroRings}>
+                    <PulsingRings />
+                  </View>
+                  <Animated.View style={[styles.heroAvatar, { transform: [{ scale: pulseAnim }] }]}>
+                    <LinearGradient
+                      colors={['#6366F1', '#8B5CF6', '#EC4899']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.heroAvatarGradient}
+                    >
+                      <View style={styles.heroAvatarInner}>
+                        <Ionicons name={getAvatarIcon(agent.avatar)} size={40} color="#fff" />
+                      </View>
+                    </LinearGradient>
+                  </Animated.View>
+                  <Text style={styles.heroTitle}>{agent.name}</Text>
+                  <Text style={styles.heroSubtitle}>AI-Powered Intelligence</Text>
+                </View>
+
+                {/* Glassmorphic Suggestion Cards */}
+                <Text style={styles.sectionLabel}>WHAT CAN I HELP WITH?</Text>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.suggestionScroll}
+                >
                   {currentSuggestions.map((suggestion, idx) => (
                     <TouchableOpacity
                       key={`${suggestionIndex}-${idx}`}
-                      style={styles.suggestionChip}
+                      style={styles.suggestion3D}
                       onPress={() => setInputText(suggestion.text)}
+                      activeOpacity={0.8}
                     >
                       <LinearGradient
-                        colors={[`${suggestion.color}20`, `${suggestion.color}08`]}
-                        style={styles.suggestionGradient}
+                        colors={[`${suggestion.color}30`, `${suggestion.color}10`, 'transparent']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.suggestion3DGradient}
                       >
-                        <Ionicons name={suggestion.icon as any} size={14} color={suggestion.color} />
-                        <Text style={[styles.suggestionText, { color: suggestion.color }]}>{suggestion.text}</Text>
+                        <View style={[styles.suggestion3DIcon, { backgroundColor: `${suggestion.color}40` }]}>
+                          <Ionicons name={suggestion.icon as any} size={24} color={suggestion.color} />
+                        </View>
+                        <Text style={styles.suggestion3DText}>{suggestion.text}</Text>
+                        <Ionicons name="arrow-forward" size={16} color={METALLIC.titanium} />
                       </LinearGradient>
                     </TouchableOpacity>
                   ))}
-                </View>
-                
-                {/* Quick Stats */}
-                <View style={styles.statsContainer}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statValue}>{agent.model.split('-')[0]}</Text>
-                    <Text style={styles.statLabel}>Model</Text>
-                  </View>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Text style={styles.statValue}>{agent.temperature}</Text>
-                    <Text style={styles.statLabel}>Temp</Text>
-                  </View>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Text style={styles.statValue}>∞</Text>
-                    <Text style={styles.statLabel}>Tools</Text>
-                  </View>
+                </ScrollView>
+
+                {/* Quick Action Buttons - Floating Style */}
+                <View style={styles.quickActions}>
+                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/imagegen')}>
+                    <LinearGradient
+                      colors={['#6366F1', '#4F46E5']}
+                      style={styles.quickActionGradient}
+                    >
+                      <Ionicons name="sparkles" size={22} color="#fff" />
+                    </LinearGradient>
+                    <Text style={styles.quickActionLabel}>Create</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/history')}>
+                    <LinearGradient
+                      colors={['#EC4899', '#DB2777']}
+                      style={styles.quickActionGradient}
+                    >
+                      <Ionicons name="time" size={22} color="#fff" />
+                    </LinearGradient>
+                    <Text style={styles.quickActionLabel}>History</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/tools')}>
+                    <LinearGradient
+                      colors={['#10B981', '#059669']}
+                      style={styles.quickActionGradient}
+                    >
+                      <Ionicons name="build" size={22} color="#fff" />
+                    </LinearGradient>
+                    <Text style={styles.quickActionLabel}>Tools</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/agents')}>
+                    <LinearGradient
+                      colors={['#F59E0B', '#D97706']}
+                      style={styles.quickActionGradient}
+                    >
+                      <Ionicons name="people" size={22} color="#fff" />
+                    </LinearGradient>
+                    <Text style={styles.quickActionLabel}>Agents</Text>
+                  </TouchableOpacity>
                 </View>
 
-                {/* Feature Cards */}
-                <View style={styles.featureCards}>
-                  <TouchableOpacity style={styles.featureCard} onPress={() => router.push('/imagegen')}>
-                    <LinearGradient colors={['rgba(99,102,241,0.15)', 'rgba(99,102,241,0.05)']} style={styles.featureGradient}>
-                      <Ionicons name="image" size={24} color={METALLIC.accent} />
-                      <Text style={styles.featureTitle}>HD Images</Text>
-                      <Text style={styles.featureDesc}>Generate art</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.featureCard} onPress={() => router.push('/tools')}>
-                    <LinearGradient colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']} style={styles.featureGradient}>
-                      <Ionicons name="construct" size={24} color={METALLIC.success} />
-                      <Text style={styles.featureTitle}>Tools</Text>
-                      <Text style={styles.featureDesc}>Dynamic gen</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+                {/* Model Info Badge */}
+                <View style={styles.modelBadge}>
+                  <View style={styles.modelDot} />
+                  <Text style={styles.modelText}>Powered by {agent.model}</Text>
                 </View>
               </View>
             ) : (
               messages.map((msg, idx) => renderMessage(msg, idx))
-            )}
+            )}}
             {isLoading && (
               <View style={styles.loadingContainer}>
                 <LinearGradient
