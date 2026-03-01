@@ -40,20 +40,46 @@ export default function HistoryScreen() {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadConversations();
-  }, []);
+  // Reload when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadConversations();
+    }, [])
+  );
 
   const loadConversations = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/conversations`);
-      setConversations(res.data);
+      // Sort by updated_at descending (most recent first)
+      const sorted = res.data.sort((a: Conversation, b: Conversation) => 
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+      setConversations(sorted);
     } catch (error) {
       console.log('Error loading conversations:', error);
+      Alert.alert('Error', 'Failed to load conversations');
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadConversations();
+  }, []);
+
+  const resumeConversation = (convo: Conversation) => {
+    // Navigate back to chat with this conversation
+    router.push({
+      pathname: '/',
+      params: { 
+        conversationId: convo.id,
+        agentId: convo.agent_id 
+      }
+    });
   };
 
   const deleteConversation = async (id: string) => {
