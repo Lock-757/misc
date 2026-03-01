@@ -384,31 +384,54 @@ export default function SettingsScreen() {
               </View>
             </View>
 
-            {/* Adult Mode */}
+            {/* Advanced Settings - Hidden by default */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Content Settings</Text>
-              <TouchableOpacity style={styles.adultModeRow} onPress={toggleAdultMode}>
-                <View style={styles.adultModeInfo}>
-                  <View style={[styles.adultModeIcon, adultMode && styles.adultModeIconActive]}>
-                    <Ionicons name="shield-outline" size={22} color={adultMode ? METALLIC.danger : METALLIC.titanium} />
-                  </View>
-                  <View style={styles.adultModeText}>
-                    <Text style={styles.adultModeTitle}>Adult Mode</Text>
-                    <Text style={styles.adultModeDesc}>
-                      {adultMode ? 'Content filtering disabled' : 'Safe content filtering enabled'}
-                    </Text>
-                  </View>
+              <TouchableOpacity 
+                style={styles.advancedHeader} 
+                onPress={() => setShowAdvanced(!showAdvanced)}
+              >
+                <View style={styles.advancedHeaderLeft}>
+                  <Ionicons name="settings-outline" size={20} color={METALLIC.titanium} />
+                  <Text style={styles.advancedHeaderText}>Advanced Settings</Text>
                 </View>
-                <View style={[styles.toggleSwitch, adultMode && styles.toggleSwitchActive]}>
-                  <View style={[styles.toggleKnob, adultMode && styles.toggleKnobActive]} />
-                </View>
+                <Ionicons 
+                  name={showAdvanced ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color={METALLIC.titanium} 
+                />
               </TouchableOpacity>
-              {adultMode && (
-                <View style={styles.warningBox}>
-                  <Ionicons name="warning" size={16} color={METALLIC.danger} />
-                  <Text style={styles.warningText}>
-                    Adult content may be generated. User discretion advised.
+              
+              {showAdvanced && (
+                <View style={styles.advancedContent}>
+                  <Text style={styles.advancedWarning}>
+                    These settings are for experienced users only
                   </Text>
+                  
+                  {/* Adult Mode - Now hidden in Advanced */}
+                  <TouchableOpacity style={styles.adultModeRow} onPress={toggleAdultMode}>
+                    <View style={styles.adultModeInfo}>
+                      <View style={[styles.adultModeIcon, adultMode && styles.adultModeIconActive]}>
+                        <Ionicons name="shield-outline" size={22} color={adultMode ? METALLIC.danger : METALLIC.titanium} />
+                      </View>
+                      <View style={styles.adultModeText}>
+                        <Text style={styles.adultModeTitle}>Content Filter</Text>
+                        <Text style={styles.adultModeDesc}>
+                          {adultMode ? 'Unrestricted mode' : 'Safe mode enabled'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.toggleSwitch, adultMode && styles.toggleSwitchActive]}>
+                      <View style={[styles.toggleKnob, adultMode && styles.toggleKnobActive]} />
+                    </View>
+                  </TouchableOpacity>
+                  {adultMode && (
+                    <View style={styles.warningBox}>
+                      <Ionicons name="warning" size={16} color={METALLIC.danger} />
+                      <Text style={styles.warningText}>
+                        Content filtering disabled. User discretion advised.
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
