@@ -1060,4 +1060,41 @@ const styles = StyleSheet.create({
     color: METALLIC.silver,
     textAlign: 'center',
   },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: METALLIC.gunmetal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: METALLIC.platinum,
+  },
+  userEmail: {
+    fontSize: 12,
+    color: METALLIC.titanium,
+  },
+  logoutButton: {
+    padding: 8,
+  },
+  danger: {
+    color: '#EF4444',
+  },
 });
