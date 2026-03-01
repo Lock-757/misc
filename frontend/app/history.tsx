@@ -139,6 +139,14 @@ export default function HistoryScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={METALLIC.accent}
+              colors={[METALLIC.accent]}
+            />
+          }
         >
           {isLoading ? (
             <View style={styles.emptyState}>
@@ -158,6 +166,7 @@ export default function HistoryScreen() {
                 key={convo.id}
                 style={styles.conversationCard}
                 activeOpacity={0.7}
+                onPress={() => resumeConversation(convo)}
               >
                 <LinearGradient
                   colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
@@ -175,7 +184,10 @@ export default function HistoryScreen() {
                     </View>
                     <TouchableOpacity
                       style={styles.deleteButton}
-                      onPress={() => deleteConversation(convo.id)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(convo.id);
+                      }}
                     >
                       <Ionicons name="trash-outline" size={18} color={METALLIC.titanium} />
                     </TouchableOpacity>
@@ -187,6 +199,10 @@ export default function HistoryScreen() {
                     <View style={styles.messageBadge}>
                       <Ionicons name="chatbubbles-outline" size={12} color={METALLIC.titanium} />
                       <Text style={styles.messageCount}>{convo.messages.length} messages</Text>
+                    </View>
+                    <View style={styles.resumeBadge}>
+                      <Text style={styles.resumeText}>Tap to continue</Text>
+                      <Ionicons name="arrow-forward" size={12} color={METALLIC.accent} />
                     </View>
                   </View>
                 </LinearGradient>
