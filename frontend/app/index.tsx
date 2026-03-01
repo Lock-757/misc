@@ -14,8 +14,10 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +25,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { AnimatedBackground, PulsingRings } from '../components/AnimatedBackground';
 
 const { width, height } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
