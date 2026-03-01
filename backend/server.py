@@ -101,6 +101,7 @@ class Message(BaseModel):
 class Conversation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str
+    user_id: Optional[str] = None
     title: str = "New Conversation"
     messages: List[Message] = []
     is_incognito: bool = False
@@ -111,6 +112,7 @@ class ChatRequest(BaseModel):
     agent_id: str
     conversation_id: Optional[str] = None
     message: str
+    user_id: Optional[str] = None
     is_incognito: bool = False
     include_memory: bool = True
 
