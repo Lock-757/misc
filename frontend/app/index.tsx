@@ -1071,7 +1071,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   menuScroll: {
-    maxHeight: height * 0.55,
+    flex: 1,
   },
   menuSectionTitle: {
     fontSize: 11,
