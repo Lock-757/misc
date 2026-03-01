@@ -119,6 +119,39 @@ class ChatResponse(BaseModel):
     message: Message
     tools_generated: List[Tool] = []
 
+# ==================== AUTH MODELS ====================
+
+class User(BaseModel):
+    user_id: str = Field(default_factory=lambda: f"user_{uuid.uuid4().hex[:12]}")
+    email: str
+    name: str
+    picture: Optional[str] = None
+    auth_provider: str = "email"  # "email" or "google"
+    password_hash: Optional[str] = None  # Only for email auth
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class UserSession(BaseModel):
+    session_id: str = Field(default_factory=lambda: f"sess_{uuid.uuid4().hex}")
+    user_id: str
+    session_token: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=7))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+class AuthResponse(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+
 # Memory Model
 class Memory(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
