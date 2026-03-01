@@ -79,6 +79,7 @@ export default function SettingsScreen() {
   const [model, setModel] = useState('grok-3-latest');
   const [temperature, setTemperature] = useState(0.7);
   const [adultMode, setAdultMode] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     loadAgent();
