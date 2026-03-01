@@ -1049,12 +1049,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   menuContainer: {
-    maxHeight: height * 0.75,
+    maxHeight: height * 0.8,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
   },
   menuGradient: {
+    flex: 1,
     padding: 20,
     paddingBottom: 40,
   },
