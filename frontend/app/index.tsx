@@ -95,6 +95,46 @@ export default function ChatScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  
+  // Rotating suggestions - different categories
+  const allSuggestions = [
+    // Business
+    { text: 'Business idea for tech', icon: 'briefcase', color: '#6366F1' },
+    { text: 'Marketing strategy tips', icon: 'megaphone', color: '#8B5CF6' },
+    { text: 'Email to client', icon: 'mail', color: '#06B6D4' },
+    // Home & Life
+    { text: 'Quick dinner recipe', icon: 'restaurant', color: '#F59E0B' },
+    { text: 'Home organization tips', icon: 'home', color: '#10B981' },
+    { text: 'Workout routine', icon: 'fitness', color: '#EF4444' },
+    // Creative
+    { text: 'Story idea', icon: 'book', color: '#EC4899' },
+    { text: 'Design inspiration', icon: 'color-palette', color: '#A855F7' },
+    { text: 'Social media caption', icon: 'logo-instagram', color: '#F97316' },
+    // Productivity
+    { text: 'Budget planning help', icon: 'wallet', color: '#14B8A6' },
+    { text: 'Travel itinerary', icon: 'airplane', color: '#3B82F6' },
+    { text: 'Meeting agenda', icon: 'calendar', color: '#84CC16' },
+    // Tech
+    { text: 'Code review help', icon: 'code-slash', color: '#6366F1' },
+    { text: 'Debug this error', icon: 'bug', color: '#EF4444' },
+    { text: 'Explain concept', icon: 'bulb', color: '#F59E0B' },
+  ];
+  
+  // Get current set of 3 suggestions
+  const currentSuggestions = [
+    allSuggestions[suggestionIndex % allSuggestions.length],
+    allSuggestions[(suggestionIndex + 1) % allSuggestions.length],
+    allSuggestions[(suggestionIndex + 2) % allSuggestions.length],
+  ];
+  
+  // Rotate suggestions every 8 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSuggestionIndex(prev => (prev + 3) % allSuggestions.length);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Redirect to login if not authenticated
   useEffect(() => {
