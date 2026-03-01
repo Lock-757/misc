@@ -578,17 +578,18 @@ export default function ChatScreen() {
                   Ready to assist.
                 </Text>
                 <View style={styles.suggestionContainer}>
-                  {['Capabilities', 'Generate a tool', 'Analyze data'].map((suggestion, idx) => (
+                  {currentSuggestions.map((suggestion, idx) => (
                     <TouchableOpacity
-                      key={idx}
+                      key={`${suggestionIndex}-${idx}`}
                       style={styles.suggestionChip}
-                      onPress={() => setInputText(suggestion === 'Capabilities' ? 'What can you do?' : suggestion)}
+                      onPress={() => setInputText(suggestion.text)}
                     >
                       <LinearGradient
-                        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
+                        colors={[`${suggestion.color}20`, `${suggestion.color}08`]}
                         style={styles.suggestionGradient}
                       >
-                        <Text style={styles.suggestionText}>{suggestion}</Text>
+                        <Ionicons name={suggestion.icon as any} size={14} color={suggestion.color} />
+                        <Text style={[styles.suggestionText, { color: suggestion.color }]}>{suggestion.text}</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   ))}
