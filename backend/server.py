@@ -295,8 +295,237 @@ class SearchResult(BaseModel):
 async def root():
     return {"message": "Agent API Running", "version": "2.0.0", "features": [
         "multi-agent", "memory", "search", "bookmarks", "quick-replies",
-        "scheduled-tasks", "webhooks", "documents", "templates", "incognito"
+        "scheduled-tasks", "webhooks", "documents", "templates", "incognito", "auth"
     ]}
+
+# ==================== AUTH HELPER FUNCTIONS ====================
+
+def hash_password(password: str) -> str:
+    """Hash a password using SHA-256 with salt"""
+    salt = secrets.token_hex(16)
+    pwd_hash = hashlib.sha256(f"{password}{salt}".encode()).hexdigest()
+    return f"{salt}:{pwd_hash}"
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a password against stored hash"""
+    try:
+        salt, pwd_hash = stored_hash.split(":")
+        return hashlib.sha256(f"{password}{salt}".encode()).hexdigest() == pwd_hash
+    except:
+        return False
+
+async def get_current_user(request: Request, session_token: Optional[str] = Cookie(None)) -> Optional[Dict]:
+    """Get current user from session token (cookie or header)"""
+    token = session_token
+    
+    # Fallback to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if not token:
+        return None
+    
+    # Find session
+    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not session:
+        return None
+    
+    # Check expiry
+    expires_at = session.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        return None
+    
+    # Get user
+    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    return user
+
+# ==================== AUTH ENDPOINTS ====================
+
+@api_router.post("/auth/register")
+async def register(request: RegisterRequest, response: Response):
+    """Register a new user with email/password"""
+    # Check if email exists
+    existing = await db.users.find_one({"email": request.email.lower()}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    user_data = {
+        "user_id": user_id,
+        "email": request.email.lower(),
+        "name": request.name,
+        "auth_provider": "email",
+        "password_hash": hash_password(request.password),
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.users.insert_one(user_data)
+    
+    # Create session
+    session_token = secrets.token_urlsafe(32)
+    session_data = {
+        "session_id": f"sess_{uuid.uuid4().hex}",
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.user_sessions.insert_one(session_data)
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+        max_age=7 * 24 * 60 * 60  # 7 days
+    )
+    
+    return {"user_id": user_id, "email": request.email.lower(), "name": request.name}
+
+@api_router.post("/auth/login")
+async def login(request: LoginRequest, response: Response):
+    """Login with email/password"""
+    user = await db.users.find_one({"email": request.email.lower()}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    if user.get("auth_provider") != "email":
+        raise HTTPException(status_code=401, detail="Please use Google Sign-In for this account")
+    
+    if not verify_password(request.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Create session
+    session_token = secrets.token_urlsafe(32)
+    session_data = {
+        "session_id": f"sess_{uuid.uuid4().hex}",
+        "user_id": user["user_id"],
+        "session_token": session_token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.user_sessions.insert_one(session_data)
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+        max_age=7 * 24 * 60 * 60
+    )
+    
+    return {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "picture": user.get("picture")}
+
+@api_router.post("/auth/google/session")
+async def google_auth_session(request: Request, response: Response):
+    """Exchange Google OAuth session_id for user data and session"""
+    # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    body = await request.json()
+    session_id = body.get("session_id")
+    
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+    
+    # Exchange session_id with Emergent Auth
+    async with httpx.AsyncClient() as client:
+        try:
+            auth_response = await client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id}
+            )
+            if auth_response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid session")
+            
+            auth_data = auth_response.json()
+        except Exception as e:
+            logger.error(f"Google auth error: {e}")
+            raise HTTPException(status_code=500, detail="Authentication failed")
+    
+    email = auth_data.get("email", "").lower()
+    name = auth_data.get("name", "User")
+    picture = auth_data.get("picture")
+    
+    # Check if user exists
+    existing_user = await db.users.find_one({"email": email}, {"_id": 0})
+    
+    if existing_user:
+        user_id = existing_user["user_id"]
+        # Update user info if needed
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture}}
+        )
+    else:
+        # Create new user
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        user_data = {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "auth_provider": "google",
+            "created_at": datetime.now(timezone.utc)
+        }
+        await db.users.insert_one(user_data)
+    
+    # Create session
+    session_token = secrets.token_urlsafe(32)
+    session_data = {
+        "session_id": f"sess_{uuid.uuid4().hex}",
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.user_sessions.insert_one(session_data)
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+        max_age=7 * 24 * 60 * 60
+    )
+    
+    return {"user_id": user_id, "email": email, "name": name, "picture": picture}
+
+@api_router.get("/auth/me")
+async def get_me(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get current authenticated user"""
+    user = await get_current_user(request, session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "picture": user.get("picture")}
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: Response, session_token: Optional[str] = Cookie(None)):
+    """Logout current user"""
+    token = session_token
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if token:
+        await db.user_sessions.delete_one({"session_token": token})
+    
+    response.delete_cookie(key="session_token", path="/")
+    return {"message": "Logged out successfully"}
 
 # ==================== AGENT ENDPOINTS ====================
 
