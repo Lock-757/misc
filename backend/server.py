@@ -1063,7 +1063,7 @@ async def generate_image(request: ImageGenerationRequest):
                 enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
             
             payload = {
-                "model": "grok-2-image",
+                "model": "grok-imagine-image",
                 "prompt": enhanced_prompt,
                 "n": 1,
                 "response_format": "b64_json"
