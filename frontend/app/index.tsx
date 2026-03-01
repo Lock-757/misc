@@ -349,6 +349,7 @@ export default function ChatScreen() {
         agent_id: agent.id,
         conversation_id: conversationId,
         message: userMessage.content,
+        user_id: user?.user_id,
       });
 
       setConversationId(response.data.conversation_id);
