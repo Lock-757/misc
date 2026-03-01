@@ -77,6 +77,9 @@ export default function ChatScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  // Auth
+  const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -93,16 +96,25 @@ export default function ChatScreen() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
 
+  // Redirect to login if not authenticated
   useEffect(() => {
-    loadData();
-    startAnimations();
-    setupAudio();
+    if (!authLoading && !isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [authLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadData();
+      startAnimations();
+      setupAudio();
+    }
     return () => {
       if (recording) {
         recording.stopAndUnloadAsync();
       }
     };
-  }, []);
+  }, [isAuthenticated]);
 
   // Handle conversation resumption from history
   useEffect(() => {
@@ -111,12 +123,31 @@ export default function ChatScreen() {
     }
   }, [params.conversationId]);
 
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={METALLIC.accent} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
+
   const loadConversation = async (convId: string) => {
     try {
       const res = await axios.get(`${API_URL}/api/conversations/${convId}`);
       if (res.data) {
         setConversationId(res.data.id);
         setMessages(res.data.messages || []);
+        // Scroll to bottom after loading messages
         // Scroll to bottom after loading messages
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
