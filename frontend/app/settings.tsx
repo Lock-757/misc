@@ -654,4 +654,36 @@ const styles = StyleSheet.create({
   },
   warningText: { flex: 1, fontSize: 12, color: METALLIC.danger, lineHeight: 16 },
   bottomSpacing: { height: 40 },
+  advancedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  advancedHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  advancedHeaderText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: METALLIC.titanium,
+  },
+  advancedContent: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  advancedWarning: {
+    fontSize: 11,
+    color: METALLIC.titanium,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
 });
