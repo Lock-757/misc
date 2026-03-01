@@ -845,8 +845,13 @@ async def search(request: SearchRequest):
 # ==================== CONVERSATION ENDPOINTS ====================
 
 @api_router.get("/conversations", response_model=List[Conversation])
-async def get_conversations(agent_id: Optional[str] = None, include_incognito: bool = False):
+async def get_conversations(request: Request, agent_id: Optional[str] = None, include_incognito: bool = False, session_token: Optional[str] = Cookie(None)):
+    # Get current user
+    user = await get_current_user(request, session_token)
+    
     query = {}
+    if user:
+        query["user_id"] = user["user_id"]
     if agent_id:
         query["agent_id"] = agent_id
     if not include_incognito:
