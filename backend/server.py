@@ -391,7 +391,7 @@ async def register(request: RegisterRequest, response: Response):
         max_age=7 * 24 * 60 * 60  # 7 days
     )
     
-    return {"user_id": user_id, "email": request.email.lower(), "name": request.name}
+    return {"user_id": user_id, "email": request.email.lower(), "name": request.name, "session_token": session_token}
 
 @api_router.post("/auth/login")
 async def login(request: LoginRequest, response: Response):
