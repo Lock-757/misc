@@ -238,11 +238,11 @@ export default function ImageGenScreen() {
           </View>
         </View>
 
-        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={() => Keyboard.dismiss()}
         >
           {/* Prompt Input */}
           <View style={styles.section}>
@@ -395,7 +395,6 @@ export default function ImageGenScreen() {
             )}
           </View>
         </ScrollView>
-        </TouchableWithoutFeedback>
 
         {/* Admin Panel Modal */}
         {isAdmin && (

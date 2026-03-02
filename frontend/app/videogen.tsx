@@ -236,12 +236,12 @@ export default function VideoGenScreen() {
           <View style={{ width: 44 }} />
         </View>
 
-        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={() => Keyboard.dismiss()}
+        >
             {/* Prompt Input */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Describe Your Video</Text>
@@ -418,8 +418,7 @@ export default function VideoGenScreen() {
                 </Text>
               </View>
             )}
-          </ScrollView>
-        </TouchableWithoutFeedback>
+        </ScrollView>
 
         {/* Video Preview Modal */}
         <Modal visible={!!previewVideo} animationType="fade" transparent>
