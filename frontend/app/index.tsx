@@ -26,7 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getStoredToken } from '../context/AuthContext';
 import { AnimatedBackground, PulsingRings } from '../components/AnimatedBackground';
 
 const { width, height } = Dimensions.get('window');
@@ -376,14 +376,13 @@ export default function ChatScreen() {
     }, 100);
 
     try {
-      const token = await import('../context/AuthContext').then(m => m.getStoredToken());
+      const token = await getStoredToken();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const response = await axios.post(`${API_URL}/api/chat`, {
         agent_id: agent.id,
         conversation_id: conversationId,
         message: userMessage.content,
         user_id: user?.user_id,
-        session_adult_mode: sessionAdultMode || isAdmin,
       }, { headers });
 
       setConversationId(response.data.conversation_id);

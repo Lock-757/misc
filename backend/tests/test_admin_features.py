@@ -21,7 +21,7 @@ if not BASE_URL:
                     BASE_URL = line.split('=', 1)[1].strip()
                     break
     except:
-        BASE_URL = 'https://ai-forge-build.preview.emergentagent.com'
+        BASE_URL = 'https://ai-chat-hub-76.preview.emergentagent.com'
 
 ADMIN_KEY = 'forge_master_2025'
 ADMIN_HEADERS = {'X-Admin-Key': ADMIN_KEY}
@@ -260,7 +260,11 @@ class TestRegularAuth:
         assert data.get('email') == TEST_EMAIL
         print(f'PASS: auth/me returns user data: {data["email"]}')
 
-    def test_auth_me_without_token(self, session):
-        resp = session.get(f'{BASE_URL}/api/auth/me')
+    def test_auth_me_without_token(self):
+        """Use fresh session without cookies"""
+        import requests as req
+        fresh = req.Session()
+        fresh.headers.update({'Content-Type': 'application/json'})
+        resp = fresh.get(f'{BASE_URL}/api/auth/me')
         assert resp.status_code == 401
         print(f'PASS: auth/me without token returns 401')
