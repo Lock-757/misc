@@ -26,15 +26,11 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Grok API setup (kept for image generation)
-GROK_API_KEY = os.environ.get('GROK_API_KEY', '')
-grok_client = AsyncOpenAI(
-    api_key=GROK_API_KEY,
-    base_url="https://api.x.ai/v1"
-) if GROK_API_KEY else None
+# Grok API key kept in env for future reference (not actively used)
+# All AI features now powered by Gemini via Emergent integrations
 
 # Gemini setup via Emergent integrations
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
 # Create the main app
@@ -1053,81 +1049,55 @@ async def chat(request: ChatRequest):
 async def generate_image(request: ImageGenerationRequest):
     agent = await db.agents.find_one({"id": request.agent_id})
     adult_mode = agent.get("adult_mode", False) if agent else False
-    
-    # Admin bypass - no filtering at all
+
     is_admin = request.is_admin
-    
-    if not GROK_API_KEY:
-        raise HTTPException(status_code=500, detail="API key not configured")
-    
+
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            headers = {
-                "Authorization": f"Bearer {GROK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            enhanced_prompt = request.prompt
-            if request.quality == "hd":
-                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
-            
-            # Only add SFW prefix if NOT admin and NOT adult_mode
-            if not is_admin and not adult_mode:
-                enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
-            
-            payload = {
-                "model": "grok-imagine-image",
-                "prompt": enhanced_prompt,
-                "n": 1,
-                "response_format": "b64_json"
-            }
-            
-            response = await client.post(
-                "https://api.x.ai/v1/images/generations",
-                headers=headers,
-                json=payload
-            )
-            
-            if response.status_code != 200:
-                error_detail = response.text
-                logger.error(f"Image generation failed: {error_detail}")
-                raise HTTPException(status_code=response.status_code, detail=f"Image generation failed: {error_detail}")
-            
-            result = response.json()
-            
-            if "data" in result and len(result["data"]) > 0:
-                image_data = result["data"][0]
-                image_base64 = image_data.get("b64_json", "")
-                
-                if not image_base64:
-                    raise HTTPException(status_code=500, detail="No image data received")
-                
-                image_record = {
-                    "id": str(uuid.uuid4()),
-                    "agent_id": request.agent_id,
-                    "prompt": request.prompt,
-                    "image_base64": image_base64,
-                    "size": request.size,
-                    "quality": request.quality,
-                    "adult_mode": adult_mode,
-                    "created_at": datetime.utcnow()
-                }
-                await db.generated_images.insert_one(image_record)
-                
-                # Trigger webhooks
-                await trigger_webhooks(request.agent_id, "image", {"prompt": request.prompt})
-                
-                return ImageGenerationResponse(
-                    id=image_record["id"],
-                    prompt=request.prompt,
-                    image_base64=image_base64,
-                    size=request.size
-                )
-            else:
-                raise HTTPException(status_code=500, detail="Invalid response from image API")
-                
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Image generation timed out")
+        enhanced_prompt = request.prompt
+        if request.quality == "hd":
+            enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
+
+        # Only add SFW prefix if NOT admin and NOT adult_mode
+        if not is_admin and not adult_mode:
+            enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
+
+        gemini_img = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message="You are an image generation assistant."
+        ).with_model("gemini", "gemini-3-pro-image-preview").with_params(modalities=["image", "text"])
+
+        msg = UserMessage(text=enhanced_prompt)
+        text_response, images = await gemini_img.send_message_multimodal_response(msg)
+
+        if not images:
+            raise HTTPException(status_code=500, detail="No image was generated. Try a different prompt.")
+
+        image_base64 = images[0]["data"]
+
+        image_record = {
+            "id": str(uuid.uuid4()),
+            "agent_id": request.agent_id,
+            "prompt": request.prompt,
+            "image_base64": image_base64,
+            "size": request.size,
+            "quality": request.quality,
+            "adult_mode": adult_mode,
+            "created_at": datetime.utcnow()
+        }
+        await db.generated_images.insert_one(image_record)
+
+        await trigger_webhooks(request.agent_id, "image", {"prompt": request.prompt})
+
+        return ImageGenerationResponse(
+            id=image_record["id"],
+            prompt=request.prompt,
+            image_base64=image_base64,
+            size=request.size
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Image generation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1135,7 +1105,7 @@ async def generate_image(request: ImageGenerationRequest):
 @api_router.get("/generated-images")
 async def get_generated_images(agent_id: Optional[str] = None, limit: int = 20):
     query = {"agent_id": agent_id} if agent_id else {}
-    images = await db.generated_images.find(query).sort("created_at", -1).limit(limit).to_list(limit)
+    images = await db.generated_images.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return images
 
 @api_router.delete("/generated-images/{image_id}")
