@@ -1,0 +1,72 @@
+{
+  "summary": "Frontend testing of 4 features: P1-SESSION (session persistence), P2-GRID (features menu 4-column grid), P3-BADGE (18+ badge visibility), ADMIN (admin bypass login). Found and fixed a React hooks violation bug. P3-BADGE has a data issue with Aurora agent having adult_mode:true.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ChatScreen (index.tsx)",
+        "issue": "P3-BADGE FAIL: 18+ badge IS showing for regular user. Root cause: Aurora agent in DB has adult_mode=true. The code condition (agent.adult_mode === true && !isAdmin) is CORRECT but the default Aurora agent in the database has adult_mode: true, causing badge to display for all non-admin users.",
+        "selector": "header area - badge at position (970, 38)",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ChatScreen (index.tsx)",
+        "issue": "FIXED: React hooks violation - useCallback was defined AFTER conditional early returns (if authLoading, if !isAuthenticated), causing 'Rendered more hooks than during the previous render' crash on page refresh. Fixed by removing useCallback wrapper from onRefresh (changed to regular async function).",
+        "selector": "app/index.tsx line 240",
+        "priority": "CRITICAL - FIXED"
+      },
+      {
+        "component": "ChatScreen (index.tsx)",
+        "issue": "FIXED: Extra closing brace ')}}' at line 673 causing 'Unexpected text node: }' console error. Fixed by removing extra } to make ')}'.",
+        "selector": "app/index.tsx line 673",
+        "priority": "MINOR - FIXED"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/frontend/app/index.tsx"],
+  "action_items": [
+    "P3-BADGE DATA FIX: Set adult_mode=false on the Aurora agent in MongoDB. The Aurora agent (id: 96cd8279-6781-4aa7-b7e2-8238c6ff867c) has adult_mode: true which causes 18+ badge to show for ALL regular users. The code fix (===true strict check) is correct, but the data needs to be updated.",
+    "Aurora agent adult_mode reset: Run: db.agents.updateOne({id: '96cd8279-6781-4aa7-b7e2-8238c6ff867c'}, {$set: {adult_mode: false}}) in MongoDB",
+    "Verify 'Unexpected text node: }' error is fully resolved in production bundle after the )}} -> )} fix"
+  ],
+  "critical_code_review_comments": [
+    "React Rules of Hooks violation in ChatScreen (index.tsx): useCallback was defined after conditional early returns. FIXED by removing useCallback wrapper.",
+    "Agent scoping: Agents are GLOBAL (not user-scoped), meaning all users share the same agents list. If any agent has adult_mode=true, all users see the 18+ badge. Consider user-scoped agents.",
+    "Extra closing brace in JSX at line 673: ')}}' should be ')}'. FIXED.",
+    "Agents endpoint GET /api/agents returns ALL agents including those with adult_mode=true as the first result, causing default display with adult mode badge."
+  ],
+  "updated_files": [
+    "/app/frontend/app/index.tsx"
+  ],
+  "success_rate": {
+    "backend": "N/A - frontend only test",
+    "frontend": "75% (3/4 test scenarios pass)"
+  },
+  "test_credentials": {
+    "admin": "any email + password: forge_master_2025",
+    "regular_user": "test_session_user_12345@example.com / testpass123"
+  },
+  "seed_data_creation": "Registered test user: test_session_user_12345@example.com / testpass123",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P1-SESSION: PASS after hooks fix. P2-GRID: PASS - 4-column layout confirmed. P3-BADGE: FAIL due to Aurora agent having adult_mode=true in DB - needs data fix. ADMIN: PASS - no 18+ badge, session persists. Two bugs were fixed in index.tsx: (1) useCallback removed from after early returns, (2) extra } removed from JSX. The 'Unexpected text node: }' error may still appear in cached bundles. Credentials: admin bypass = any email + forge_master_2025; test user = test_session_user_12345@example.com / testpass123",
+  "rca_of_issues": {
+    "hooks_violation": {
+      "issue": "React 'Rendered more hooks than during previous render' crash on page refresh",
+      "root_cause": "useCallback at line ~258 (original) was defined AFTER two conditional early returns (if authLoading return spinner, if !isAuthenticated return null). On page refresh, React renders component twice: first render with authLoading=true hits early return before useCallback (21 hooks), second render with authLoading=false executes useCallback (22 hooks). React detects hook count mismatch and throws error.",
+      "fix_applied": "Removed useCallback wrapper from onRefresh function. Changed from `const onRefresh = useCallback(async () => {...}, [])` to `const onRefresh = async () => {...}`. Also moved all helper functions to before the conditional early returns.",
+      "status": "FIXED"
+    },
+    "badge_showing": {
+      "issue": "18+ badge visible for regular user despite P3 fix",
+      "root_cause": "The Aurora agent in MongoDB has adult_mode: true. The code condition (agent.adult_mode === true && !isAdmin) is correctly implemented with strict equality. However, since agents are global (not user-scoped), the Aurora agent with adult_mode=true is returned first in the GET /api/agents list and used as the default agent for all users.",
+      "fix_needed": "Update Aurora agent in MongoDB to set adult_mode=false, OR ensure default agents are created with adult_mode=false",
+      "status": "UNFIXED - needs main agent action"
+    }
+  }
+}

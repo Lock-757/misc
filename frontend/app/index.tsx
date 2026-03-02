@@ -166,32 +166,13 @@ export default function ChatScreen() {
     }
   }, [params.conversationId]);
 
-  // Show loading while checking auth
-  if (authLoading) {
-    return (
-      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={METALLIC.accent} />
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
-
-  // Don't render if not authenticated (will redirect)
-  if (!isAuthenticated) {
-    return null;
-  }
-
+  // Helper functions defined before early returns to satisfy Rules of Hooks
   const loadConversation = async (convId: string) => {
     try {
       const res = await axios.get(`${API_URL}/api/conversations/${convId}`);
       if (res.data) {
         setConversationId(res.data.id);
         setMessages(res.data.messages || []);
-        // Scroll to bottom after loading messages
-        // Scroll to bottom after loading messages
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
@@ -255,11 +236,30 @@ export default function ChatScreen() {
     }
   };
 
-  const onRefresh = useCallback(async () => {
+  // Regular function (not useCallback) to avoid Rules of Hooks violations
+  const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
-  }, []);
+  };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={METALLIC.accent} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // Voice Recording
   const startRecording = async () => {
@@ -525,7 +525,7 @@ export default function ChatScreen() {
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>{agent.model.split('-')[0]}</Text>
-                  {agent.adult_mode && !isAdmin && (
+                  {agent.adult_mode === true && !isAdmin && (
                     <View style={styles.adultBadgeSmall}>
                       <Text style={styles.adultBadgeText}>18+</Text>
                     </View>
@@ -670,7 +670,7 @@ export default function ChatScreen() {
               </View>
             ) : (
               messages.map((msg, idx) => renderMessage(msg, idx))
-            )}}
+            )}
             {isLoading && (
               <View style={styles.loadingContainer}>
                 <LinearGradient
@@ -1122,13 +1122,13 @@ const styles = StyleSheet.create({
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    justifyContent: 'flex-start',
+    marginHorizontal: -4,
   },
   menuItem: {
-    width: '22%',
+    width: '25%',
+    paddingHorizontal: 4,
+    paddingBottom: 16,
     alignItems: 'center',
-    gap: 6,
   },
   menuIcon: {
     width: 48,
@@ -1142,6 +1142,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: METALLIC.silver,
     textAlign: 'center',
+    marginTop: 6,
   },
   userCard: {
     flexDirection: 'row',

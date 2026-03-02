@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -62,23 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Check for stored admin status
+  // Check for stored admin status first, then run regular auth
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (Platform.OS === 'web') {
-        const adminStatus = localStorage.getItem('forge_admin');
-        if (adminStatus === 'true') {
-          setIsAdmin(true);
-          // Auto-login admin
-          setUser({
-            user_id: 'admin_master',
-            email: 'admin@forge.ai',
-            name: 'Forge Master',
-            is_admin: true,
-          });
-        }
-      } else {
-        const adminStatus = await SecureStore.getItemAsync('forge_admin');
+    const initialize = async () => {
+      // Step 1: check admin status
+      let adminFound = false;
+      try {
+        const adminStatus = Platform.OS === 'web'
+          ? localStorage.getItem('forge_admin')
+          : await SecureStore.getItemAsync('forge_admin');
+
         if (adminStatus === 'true') {
           setIsAdmin(true);
           setUser({
@@ -87,10 +80,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             name: 'Forge Master',
             is_admin: true,
           });
+          adminFound = true;
         }
+      } catch (e) {
+        console.log('Admin status check error:', e);
+      }
+
+      if (adminFound) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 2: check regular session token
+      // Skip if handling OAuth callback
+      if (Platform.OS === 'web' && window.location.hash?.includes('session_id=')) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        if (token) {
+          const response = await axios.get(`${API_URL}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
+          setUser(response.data);
+        }
+      } catch (error: any) {
+        // Only clear token on explicit 401 — not on network/server errors
+        if (error.response?.status === 401) {
+          console.log('Session expired, clearing token');
+          await removeToken();
+          setUser(null);
+        } else {
+          console.log('Auth check failed (keeping session):', error?.message);
+        }
+      } finally {
+        setIsLoading(false);
       }
     };
-    checkAdminStatus();
+
+    initialize();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const adminLogin = (secret: string): boolean => {
@@ -113,40 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const checkAuth = useCallback(async () => {
-    // Skip if handling OAuth callback
-    if (Platform.OS === 'web' && window.location.hash?.includes('session_id=')) {
-      setIsLoading(false);
-      return;
-    }
-
-    // Skip if admin is already logged in
-    if (isAdmin) {
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const token = await getToken();
-      if (token) {
-        const response = await axios.get(`${API_URL}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-          withCredentials: true,
-        });
-        setUser(response.data);
-      }
-    } catch (error) {
-      console.log('Auth check failed:', error);
-      await removeToken();
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -242,7 +240,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshUser = async () => {
-    await checkAuth();
+    // Re-validate token against the server
+    try {
+      const token = await getToken();
+      if (token) {
+        const response = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
+        setUser(response.data);
+      }
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        await removeToken();
+        setUser(null);
+      }
+    }
   };
 
   return (
