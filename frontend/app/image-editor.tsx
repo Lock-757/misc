@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   ScrollView,
   Image,
   TextInput,
@@ -11,6 +12,9 @@ import {
   Dimensions,
   ActivityIndicator,
   Modal,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +25,7 @@ import * as Sharing from 'expo-sharing';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 const METALLIC = {
@@ -37,28 +41,15 @@ const METALLIC = {
   warning: '#F59E0B',
 };
 
-// Content filter system
-const BLOCKED_TERMS_USER = [
-  'nude', 'naked', 'explicit', 'pornographic', 'genitals', 'sexual intercourse',
-  'xxx', 'nsfw', 'erotic pose', 'fully nude'
-];
-
-const ALLOWED_ADULT_THEMES = [
-  'provocative', 'sensual', 'lingerie', 'underwear', 'bikini', 'swimsuit',
-  'seductive', 'alluring', 'suggestive', 'mature themes', 'adult themes',
-  'smoking', 'alcohol', 'tattoos', 'gothic', 'dark themes', 'violence', 'blood',
-  'horror', 'scary', 'weapons', 'combat', 'fighting'
-];
-
 const STYLE_PRESETS = [
-  { id: 'enhance', label: 'Enhance', prompt: 'enhance quality, improve details, sharper' },
-  { id: 'artistic', label: 'Artistic', prompt: 'artistic style, painterly, creative' },
-  { id: 'cinematic', label: 'Cinematic', prompt: 'cinematic lighting, dramatic, movie poster' },
-  { id: 'vintage', label: 'Vintage', prompt: 'vintage style, retro, film grain' },
-  { id: 'fantasy', label: 'Fantasy', prompt: 'fantasy style, magical, ethereal' },
-  { id: 'cyberpunk', label: 'Cyberpunk', prompt: 'cyberpunk style, neon, futuristic' },
-  { id: 'anime', label: 'Anime', prompt: 'anime style, japanese animation' },
-  { id: 'realistic', label: 'Realistic', prompt: 'photorealistic, hyperrealistic, detailed' },
+  { id: 'enhance', label: 'Enhance', icon: 'sparkles', prompt: 'enhance quality, improve details, sharper' },
+  { id: 'artistic', label: 'Artistic', icon: 'brush', prompt: 'artistic style, painterly, creative' },
+  { id: 'cinematic', label: 'Cinematic', icon: 'film', prompt: 'cinematic lighting, dramatic, movie poster' },
+  { id: 'vintage', label: 'Vintage', icon: 'time', prompt: 'vintage style, retro, film grain' },
+  { id: 'fantasy', label: 'Fantasy', icon: 'planet', prompt: 'fantasy style, magical, ethereal' },
+  { id: 'cyberpunk', label: 'Cyberpunk', icon: 'flash', prompt: 'cyberpunk style, neon, futuristic' },
+  { id: 'anime', label: 'Anime', icon: 'heart', prompt: 'anime style, japanese animation' },
+  { id: 'realistic', label: 'Photo', icon: 'camera', prompt: 'photorealistic, hyperrealistic, detailed' },
 ];
 
 export default function ImageEditorScreen() {
@@ -75,6 +66,7 @@ export default function ImageEditorScreen() {
   const [bypassFilters, setBypassFilters] = useState(false);
   const [generationHistory, setGenerationHistory] = useState<string[]>([]);
   const [showContentInfo, setShowContentInfo] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
     if (params.imageBase64) {
@@ -87,59 +79,35 @@ export default function ImageEditorScreen() {
     }
   }, [params]);
 
-  // Content filtering function
-  const filterPrompt = (prompt: string): { allowed: boolean; filtered: string; reason?: string } => {
-    // Admin with bypass enabled = no filtering
-    if (isAdmin && bypassFilters) {
-      return { allowed: true, filtered: prompt };
-    }
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
-    const lowerPrompt = prompt.toLowerCase();
-    
-    // Check for hard-blocked terms (unless admin)
-    if (!isAdmin) {
-      for (const term of BLOCKED_TERMS_USER) {
-        if (lowerPrompt.includes(term)) {
-          return { 
-            allowed: false, 
-            filtered: prompt, 
-            reason: `Content contains restricted terms. Explicit nudity is not available. Try using: lingerie, bikini, or suggestive poses instead.` 
-          };
-        }
-      }
-    }
-
-    return { allowed: true, filtered: prompt };
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
   };
 
   const generateWithPrompt = async () => {
     if (!editPrompt.trim()) {
-      Alert.alert('Error', 'Please enter an edit prompt');
+      Alert.alert('Error', 'Please enter a prompt');
       return;
     }
 
-    // Apply content filter
-    const filterResult = filterPrompt(editPrompt);
-    if (!filterResult.allowed) {
-      Alert.alert('Content Restricted', filterResult.reason);
-      return;
-    }
-
+    dismissKeyboard();
     setIsGenerating(true);
     
     try {
-      // Combine style preset with user prompt
-      let fullPrompt = filterResult.filtered;
+      let fullPrompt = editPrompt;
       if (selectedStyle) {
         const style = STYLE_PRESETS.find(s => s.id === selectedStyle);
         if (style) {
           fullPrompt = `${fullPrompt}, ${style.prompt}`;
         }
-      }
-
-      // If we have an existing image, describe editing it
-      if (imageUri) {
-        fullPrompt = `Create a variation: ${fullPrompt}`;
       }
 
       const response = await axios.post(`${API_URL}/api/generate-image`, {
@@ -150,17 +118,19 @@ export default function ImageEditorScreen() {
         is_admin: isAdmin && bypassFilters,
       });
 
-      if (response.data.image_data) {
-        const newUri = `data:image/png;base64,${response.data.image_data}`;
+      if (response.data.image_base64) {
+        const newUri = `data:image/png;base64,${response.data.image_base64}`;
         if (imageUri) {
           setGenerationHistory(prev => [...prev, imageUri]);
         }
         setImageUri(newUri);
+        setEditPrompt('');
       } else if (response.data.image_url) {
         if (imageUri) {
           setGenerationHistory(prev => [...prev, imageUri]);
         }
         setImageUri(response.data.image_url);
+        setEditPrompt('');
       }
     } catch (error: any) {
       console.error('Generation error:', error);
@@ -173,11 +143,13 @@ export default function ImageEditorScreen() {
   const applyStylePreset = (styleId: string) => {
     const style = STYLE_PRESETS.find(s => s.id === styleId);
     if (style) {
-      setSelectedStyle(styleId);
-      if (editPrompt) {
-        setEditPrompt(`${editPrompt}, ${style.prompt}`);
+      if (selectedStyle === styleId) {
+        setSelectedStyle(null);
       } else {
-        setEditPrompt(style.prompt);
+        setSelectedStyle(styleId);
+        if (!editPrompt) {
+          setEditPrompt(style.prompt);
+        }
       }
     }
   };
@@ -224,294 +196,240 @@ export default function ImageEditorScreen() {
     }
   };
 
-  // Empty state - no image
-  if (!imageUri && !params.imageBase64 && !params.imageUrl) {
-    return (
-      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-              <Ionicons name="chevron-back" size={26} color={METALLIC.platinum} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>AI Image Editor</Text>
-            <View style={styles.headerRight}>
-              {isAdmin && (
-                <TouchableOpacity onPress={() => setShowAdminPanel(true)} style={styles.headerButton}>
-                  <Ionicons name="shield" size={22} color={METALLIC.warning} />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Create from scratch */}
-          <ScrollView style={styles.createContainer}>
-            <Text style={styles.createTitle}>Create New Image</Text>
-            <Text style={styles.createSubtitle}>Describe what you want to generate</Text>
-
-            <View style={styles.promptContainer}>
-              <TextInput
-                style={styles.promptInput}
-                value={editPrompt}
-                onChangeText={setEditPrompt}
-                placeholder="Describe your image..."
-                placeholderTextColor={METALLIC.titanium}
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-
-            {/* Content info for users */}
-            {!isAdmin && (
-              <TouchableOpacity style={styles.contentInfoButton} onPress={() => setShowContentInfo(true)}>
-                <Ionicons name="information-circle-outline" size={18} color={METALLIC.titanium} />
-                <Text style={styles.contentInfoText}>Content guidelines</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Style presets */}
-            <Text style={styles.sectionTitle}>Style Presets</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.styleRow}>
-                {STYLE_PRESETS.map((style) => (
-                  <TouchableOpacity
-                    key={style.id}
-                    style={[styles.styleChip, selectedStyle === style.id && styles.styleChipSelected]}
-                    onPress={() => applyStylePreset(style.id)}
-                  >
-                    <Text style={[styles.styleChipText, selectedStyle === style.id && styles.styleChipTextSelected]}>
-                      {style.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            {/* Generate button */}
-            <TouchableOpacity 
-              style={styles.generateButton} 
-              onPress={generateWithPrompt}
-              disabled={isGenerating}
-            >
-              <LinearGradient colors={[METALLIC.accent, '#8B5CF6']} style={styles.generateGradient}>
-                {isGenerating ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="sparkles" size={22} color="#fff" />
-                    <Text style={styles.generateText}>Generate Image</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Admin Panel Modal */}
-          {renderAdminPanel()}
-          
-          {/* Content Info Modal */}
-          {renderContentInfoModal()}
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
-
-  // With image - editing mode
-  return (
-    <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={26} color={METALLIC.platinum} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit with AI</Text>
-          <View style={styles.headerRight}>
-            {isAdmin && (
-              <TouchableOpacity onPress={() => setShowAdminPanel(true)} style={styles.headerButton}>
-                <Ionicons name="shield" size={22} color={METALLIC.warning} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={shareImage} style={styles.headerButton}>
-              <Ionicons name="share-outline" size={22} color={METALLIC.platinum} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Image Preview */}
-        <View style={styles.previewContainer}>
-          {isGenerating && (
-            <View style={styles.processingOverlay}>
-              <ActivityIndicator size="large" color={METALLIC.accent} />
-              <Text style={styles.processingText}>Generating...</Text>
-            </View>
-          )}
-          <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
-        </View>
-
-        {/* Edit Controls */}
-        <View style={styles.editControls}>
-          {/* Undo/Reset */}
-          <View style={styles.undoRow}>
-            <TouchableOpacity 
-              style={[styles.undoButton, generationHistory.length === 0 && styles.undoButtonDisabled]} 
-              onPress={undoGeneration}
-              disabled={generationHistory.length === 0}
-            >
-              <Ionicons name="arrow-undo" size={18} color={generationHistory.length > 0 ? METALLIC.platinum : METALLIC.gunmetal} />
-              <Text style={[styles.undoText, generationHistory.length === 0 && styles.undoTextDisabled]}>Undo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.undoButton} onPress={resetToOriginal}>
-              <Ionicons name="refresh" size={18} color={METALLIC.platinum} />
-              <Text style={styles.undoText}>Reset</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Edit Prompt Input */}
-          <View style={styles.editInputContainer}>
-            <TextInput
-              style={styles.editInput}
-              value={editPrompt}
-              onChangeText={setEditPrompt}
-              placeholder="Describe how to modify this image..."
-              placeholderTextColor={METALLIC.titanium}
-              multiline
-            />
-            <TouchableOpacity 
-              style={styles.editSendButton} 
-              onPress={generateWithPrompt}
-              disabled={isGenerating || !editPrompt.trim()}
-            >
-              <LinearGradient 
-                colors={editPrompt.trim() ? [METALLIC.accent, '#8B5CF6'] : [METALLIC.gunmetal, METALLIC.gunmetal]} 
-                style={styles.editSendGradient}
-              >
-                <Ionicons name="sparkles" size={20} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          {/* Quick style buttons */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickStyleScroll}>
-            {STYLE_PRESETS.slice(0, 5).map((style) => (
-              <TouchableOpacity
-                key={style.id}
-                style={styles.quickStyleChip}
-                onPress={() => {
-                  setEditPrompt(style.prompt);
-                  setSelectedStyle(style.id);
-                }}
-              >
-                <Text style={styles.quickStyleText}>{style.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Admin Panel Modal */}
-        {renderAdminPanel()}
-        
-        {/* Content Info Modal */}
-        {renderContentInfoModal()}
-      </SafeAreaView>
-    </LinearGradient>
-  );
-
-  function renderAdminPanel() {
+  const renderAdminPanel = () => {
     if (!isAdmin) return null;
     
     return (
       <Modal visible={showAdminPanel} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAdminPanel(false)}>
-          <View style={styles.adminPanel}>
-            <Text style={styles.adminTitle}>Admin Controls</Text>
-            <Text style={styles.adminSubtitle}>These controls are only visible to you</Text>
-            
-            <TouchableOpacity 
-              style={styles.adminOption}
-              onPress={() => setBypassFilters(!bypassFilters)}
-            >
-              <View style={styles.adminOptionInfo}>
-                <Ionicons name="shield-off" size={22} color={bypassFilters ? METALLIC.danger : METALLIC.titanium} />
-                <View>
-                  <Text style={styles.adminOptionTitle}>Bypass Content Filters</Text>
-                  <Text style={styles.adminOptionDesc}>
-                    {bypassFilters ? 'All restrictions disabled' : 'Standard restrictions active'}
+        <TouchableWithoutFeedback onPress={() => setShowAdminPanel(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.adminPanel}>
+                <Text style={styles.adminTitle}>Admin Controls</Text>
+                <Text style={styles.adminSubtitle}>Only visible to you</Text>
+                
+                <TouchableOpacity 
+                  style={styles.adminOption}
+                  onPress={() => setBypassFilters(!bypassFilters)}
+                >
+                  <View style={styles.adminOptionInfo}>
+                    <Ionicons name="shield-off" size={22} color={bypassFilters ? METALLIC.danger : METALLIC.titanium} />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.adminOptionTitle}>Bypass All Filters</Text>
+                      <Text style={styles.adminOptionDesc}>
+                        {bypassFilters ? 'UNRESTRICTED MODE' : 'Standard mode'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.toggle, bypassFilters && styles.toggleActive]}>
+                    <View style={[styles.toggleKnob, bypassFilters && styles.toggleKnobActive]} />
+                  </View>
+                </TouchableOpacity>
+
+                {bypassFilters && (
+                  <View style={styles.adminWarning}>
+                    <Ionicons name="warning" size={16} color={METALLIC.warning} />
+                    <Text style={styles.adminWarningText}>
+                      All content restrictions disabled. Full creative freedom enabled.
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity style={styles.adminCloseButton} onPress={() => setShowAdminPanel(false)}>
+                  <Text style={styles.adminCloseText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
+  };
+
+  const renderContentInfo = () => (
+    <Modal visible={showContentInfo} transparent animationType="fade">
+      <TouchableWithoutFeedback onPress={() => setShowContentInfo(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <View style={styles.contentModal}>
+              <Text style={styles.contentTitle}>Content Guidelines</Text>
+              
+              <View style={styles.contentSection}>
+                <Ionicons name="checkmark-circle" size={20} color={METALLIC.success} />
+                <View style={{flex: 1, marginLeft: 10}}>
+                  <Text style={styles.contentSectionTitle}>Available</Text>
+                  <Text style={styles.contentText}>
+                    Lingerie, bikinis, suggestive poses, sensual themes, mature content, 
+                    action, violence, dark themes, artistic expressions
                   </Text>
                 </View>
               </View>
-              <View style={[styles.toggle, bypassFilters && styles.toggleActive]}>
-                <View style={[styles.toggleKnob, bypassFilters && styles.toggleKnobActive]} />
-              </View>
-            </TouchableOpacity>
 
-            <View style={styles.adminDivider} />
-            
-            <Text style={styles.adminNote}>
-              When bypass is enabled, you can generate any content including explicit adult material.
-              This setting does not affect other users.
-            </Text>
-
-            <TouchableOpacity style={styles.adminCloseButton} onPress={() => setShowAdminPanel(false)}>
-              <Text style={styles.adminCloseText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    );
-  }
-
-  function renderContentInfoModal() {
-    return (
-      <Modal visible={showContentInfo} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowContentInfo(false)}>
-          <View style={styles.contentInfoModal}>
-            <Text style={styles.contentInfoTitle}>Content Guidelines</Text>
-            
-            <View style={styles.contentSection}>
-              <View style={styles.contentSectionHeader}>
-                <Ionicons name="checkmark-circle" size={20} color={METALLIC.success} />
-                <Text style={styles.contentSectionTitle}>Allowed Content</Text>
-              </View>
-              <Text style={styles.contentSectionText}>
-                • Lingerie, bikinis, swimwear{'\n'}
-                • Suggestive or sensual poses{'\n'}
-                • Mature/adult themes{'\n'}
-                • Artistic nudity implications{'\n'}
-                • Dark themes, horror, action{'\n'}
-                • Alcohol, smoking references
-              </Text>
-            </View>
-
-            <View style={styles.contentSection}>
-              <View style={styles.contentSectionHeader}>
+              <View style={styles.contentSection}>
                 <Ionicons name="close-circle" size={20} color={METALLIC.danger} />
-                <Text style={styles.contentSectionTitle}>Not Available</Text>
+                <View style={{flex: 1, marginLeft: 10}}>
+                  <Text style={styles.contentSectionTitle}>Not Available</Text>
+                  <Text style={styles.contentText}>
+                    Explicit nudity and sexual content
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.contentSectionText}>
-                • Explicit nudity{'\n'}
-                • Sexual content{'\n'}
-                • Pornographic material
-              </Text>
+
+              <TouchableOpacity style={styles.contentCloseButton} onPress={() => setShowContentInfo(false)}>
+                <Text style={styles.contentCloseText}>Got it</Text>
+              </TouchableOpacity>
             </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
 
-            <Text style={styles.contentNote}>
-              For creative artistic expression, try descriptive terms like 
-              "artistic", "sensual", "alluring", or "provocative".
-            </Text>
+  return (
+    <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <TouchableWithoutFeedback onPress={dismissKeyboard}>
+            <View style={styles.innerContainer}>
+              {/* Header */}
+              <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+                  <Ionicons name="chevron-back" size={26} color={METALLIC.platinum} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>AI Image Studio</Text>
+                <View style={styles.headerRight}>
+                  {isAdmin && (
+                    <TouchableOpacity onPress={() => setShowAdminPanel(true)} style={styles.headerButton}>
+                      <Ionicons name="shield" size={22} color={bypassFilters ? METALLIC.danger : METALLIC.warning} />
+                    </TouchableOpacity>
+                  )}
+                  {imageUri && (
+                    <TouchableOpacity onPress={shareImage} style={styles.headerButton}>
+                      <Ionicons name="share-outline" size={22} color={METALLIC.platinum} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
 
-            <TouchableOpacity style={styles.contentCloseButton} onPress={() => setShowContentInfo(false)}>
-              <Text style={styles.contentCloseText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    );
-  }
+              {/* Image Preview */}
+              {imageUri ? (
+                <View style={styles.previewContainer}>
+                  {isGenerating && (
+                    <View style={styles.loadingOverlay}>
+                      <ActivityIndicator size="large" color={METALLIC.accent} />
+                      <Text style={styles.loadingText}>Creating magic...</Text>
+                    </View>
+                  )}
+                  <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
+                  
+                  {/* Undo/Reset buttons */}
+                  <View style={styles.imageActions}>
+                    <TouchableOpacity 
+                      style={[styles.actionButton, generationHistory.length === 0 && styles.actionButtonDisabled]} 
+                      onPress={undoGeneration}
+                      disabled={generationHistory.length === 0}
+                    >
+                      <Ionicons name="arrow-undo" size={20} color={generationHistory.length > 0 ? METALLIC.platinum : METALLIC.gunmetal} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={resetToOriginal}>
+                      <Ionicons name="refresh" size={20} color={METALLIC.platinum} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.emptyPreview}>
+                  <Ionicons name="image-outline" size={60} color={METALLIC.gunmetal} />
+                  <Text style={styles.emptyText}>Enter a prompt to create an image</Text>
+                </View>
+              )}
+
+              {/* Style Presets */}
+              <View style={styles.stylesSection}>
+                <Text style={styles.sectionLabel}>STYLE</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.stylesRow}>
+                    {STYLE_PRESETS.map((style) => (
+                      <TouchableOpacity
+                        key={style.id}
+                        style={[styles.styleButton, selectedStyle === style.id && styles.styleButtonSelected]}
+                        onPress={() => applyStylePreset(style.id)}
+                      >
+                        <Ionicons 
+                          name={style.icon as any} 
+                          size={18} 
+                          color={selectedStyle === style.id ? METALLIC.accent : METALLIC.titanium} 
+                        />
+                        <Text style={[styles.styleLabel, selectedStyle === style.id && styles.styleLabelSelected]}>
+                          {style.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* Content info for non-admin */}
+              {!isAdmin && (
+                <TouchableOpacity style={styles.infoButton} onPress={() => setShowContentInfo(true)}>
+                  <Ionicons name="information-circle-outline" size={16} color={METALLIC.titanium} />
+                  <Text style={styles.infoText}>Content guidelines</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Prompt Input */}
+              <View style={styles.promptSection}>
+                <View style={styles.promptInputContainer}>
+                  <TextInput
+                    style={styles.promptInput}
+                    value={editPrompt}
+                    onChangeText={setEditPrompt}
+                    placeholder="Describe your image..."
+                    placeholderTextColor={METALLIC.titanium}
+                    multiline
+                    numberOfLines={3}
+                    blurOnSubmit={false}
+                    returnKeyType="default"
+                  />
+                </View>
+                <TouchableOpacity 
+                  style={[styles.generateButton, (!editPrompt.trim() || isGenerating) && styles.generateButtonDisabled]}
+                  onPress={generateWithPrompt}
+                  disabled={!editPrompt.trim() || isGenerating}
+                >
+                  <LinearGradient 
+                    colors={editPrompt.trim() && !isGenerating ? [METALLIC.accent, '#8B5CF6'] : [METALLIC.gunmetal, METALLIC.gunmetal]}
+                    style={styles.generateGradient}
+                  >
+                    {isGenerating ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="sparkles" size={20} color="#fff" />
+                        <Text style={styles.generateText}>Generate</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+
+        {renderAdminPanel()}
+        {renderContentInfo()}
+      </SafeAreaView>
+    </LinearGradient>
+  );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  keyboardView: { flex: 1 },
+  innerContainer: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,56 +439,109 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  headerButton: { padding: 4 },
+  headerButton: { padding: 4, minWidth: 32 },
   headerTitle: { fontSize: 17, fontWeight: '600', color: METALLIC.platinum },
-  headerRight: { flexDirection: 'row', gap: 12 },
+  headerRight: { flexDirection: 'row', gap: 8 },
   
-  // Create mode styles
-  createContainer: { flex: 1, padding: 20 },
-  createTitle: { fontSize: 24, fontWeight: '700', color: METALLIC.platinum, marginBottom: 8 },
-  createSubtitle: { fontSize: 14, color: METALLIC.titanium, marginBottom: 24 },
-  promptContainer: {
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    maxHeight: height * 0.4,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  loadingText: { marginTop: 12, fontSize: 14, color: METALLIC.titanium },
+  previewImage: { width: '100%', height: '100%' },
+  imageActions: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonDisabled: { opacity: 0.4 },
+  
+  emptyPreview: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 16,
+    maxHeight: height * 0.3,
+  },
+  emptyText: { marginTop: 12, fontSize: 14, color: METALLIC.titanium },
+
+  stylesSection: { paddingHorizontal: 16, marginBottom: 12 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: METALLIC.titanium,
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  stylesRow: { flexDirection: 'row', gap: 10 },
+  styleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  styleButtonSelected: {
+    backgroundColor: METALLIC.accent + '20',
+    borderColor: METALLIC.accent,
+  },
+  styleLabel: { fontSize: 13, fontWeight: '500', color: METALLIC.titanium },
+  styleLabelSelected: { color: METALLIC.accent },
+
+  infoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  infoText: { fontSize: 12, color: METALLIC.titanium },
+
+  promptSection: { padding: 16, paddingTop: 8 },
+  promptInputContainer: {
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   promptInput: {
     padding: 16,
     fontSize: 15,
     color: METALLIC.platinum,
-    minHeight: 100,
+    minHeight: 80,
+    maxHeight: 120,
     textAlignVertical: 'top',
   },
-  contentInfoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 24,
-  },
-  contentInfoText: { fontSize: 13, color: METALLIC.titanium },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: METALLIC.titanium,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
-  styleRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-  styleChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  styleChipSelected: { backgroundColor: METALLIC.accent + '30', borderColor: METALLIC.accent },
-  styleChipText: { fontSize: 13, fontWeight: '500', color: METALLIC.titanium },
-  styleChipTextSelected: { color: METALLIC.accent },
-  generateButton: { borderRadius: 14, overflow: 'hidden', marginTop: 8 },
+  generateButton: { borderRadius: 14, overflow: 'hidden' },
+  generateButtonDisabled: { opacity: 0.6 },
   generateGradient: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -580,78 +551,13 @@ const styles = StyleSheet.create({
   },
   generateText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 
-  // Edit mode styles
-  previewContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    maxHeight: width,
-  },
-  processingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  processingText: { marginTop: 12, fontSize: 14, color: METALLIC.titanium },
-  previewImage: { width: '100%', height: '100%' },
-  editControls: { padding: 16 },
-  undoRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  undoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 20,
-  },
-  undoButtonDisabled: { opacity: 0.5 },
-  undoText: { fontSize: 13, color: METALLIC.platinum },
-  undoTextDisabled: { color: METALLIC.gunmetal },
-  editInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    marginBottom: 12,
-  },
-  editInput: {
-    flex: 1,
-    padding: 14,
-    fontSize: 15,
-    color: METALLIC.platinum,
-    maxHeight: 100,
-  },
-  editSendButton: { padding: 8 },
-  editSendGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickStyleScroll: { marginTop: 4 },
-  quickStyleChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 16,
-  },
-  quickStyleText: { fontSize: 12, color: METALLIC.silver },
-
-  // Modal styles
+  // Modals
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   adminPanel: {
     backgroundColor: METALLIC.darkSteel,
@@ -660,7 +566,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 340,
   },
-  adminTitle: { fontSize: 20, fontWeight: '700', color: METALLIC.platinum, marginBottom: 4 },
+  adminTitle: { fontSize: 20, fontWeight: '700', color: METALLIC.platinum },
   adminSubtitle: { fontSize: 13, color: METALLIC.titanium, marginBottom: 20 },
   adminOption: {
     flexDirection: 'row',
@@ -688,8 +594,16 @@ const styles = StyleSheet.create({
     backgroundColor: METALLIC.titanium,
   },
   toggleKnobActive: { transform: [{ translateX: 22 }], backgroundColor: '#fff' },
-  adminDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 16 },
-  adminNote: { fontSize: 12, color: METALLIC.titanium, lineHeight: 18 },
+  adminWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: METALLIC.warning + '15',
+    borderRadius: 10,
+  },
+  adminWarningText: { flex: 1, fontSize: 12, color: METALLIC.warning, lineHeight: 18 },
   adminCloseButton: {
     marginTop: 20,
     padding: 14,
@@ -699,30 +613,19 @@ const styles = StyleSheet.create({
   },
   adminCloseText: { fontSize: 15, fontWeight: '600', color: METALLIC.platinum },
 
-  // Content info modal
-  contentInfoModal: {
+  contentModal: {
     backgroundColor: METALLIC.darkSteel,
     borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 340,
   },
-  contentInfoTitle: { fontSize: 20, fontWeight: '700', color: METALLIC.platinum, marginBottom: 20 },
-  contentSection: { marginBottom: 16 },
-  contentSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  contentSectionTitle: { fontSize: 14, fontWeight: '600', color: METALLIC.platinum },
-  contentSectionText: { fontSize: 13, color: METALLIC.titanium, lineHeight: 20, paddingLeft: 28 },
-  contentNote: {
-    fontSize: 12,
-    color: METALLIC.titanium,
-    fontStyle: 'italic',
-    marginTop: 8,
-    padding: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 8,
-  },
+  contentTitle: { fontSize: 20, fontWeight: '700', color: METALLIC.platinum, marginBottom: 20 },
+  contentSection: { flexDirection: 'row', marginBottom: 16 },
+  contentSectionTitle: { fontSize: 14, fontWeight: '600', color: METALLIC.platinum, marginBottom: 4 },
+  contentText: { fontSize: 13, color: METALLIC.titanium, lineHeight: 20 },
   contentCloseButton: {
-    marginTop: 20,
+    marginTop: 8,
     padding: 14,
     backgroundColor: METALLIC.accent,
     borderRadius: 12,
