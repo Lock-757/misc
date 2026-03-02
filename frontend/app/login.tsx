@@ -34,7 +34,7 @@ const METALLIC = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, register, loginWithGoogle, isLoading: authLoading } = useAuth();
+  const { login, register, loginWithGoogle, isLoading: authLoading, adminLogin } = useAuth();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -44,6 +44,14 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleEmailAuth = async () => {
+    // Check for admin secret first (any field can contain it)
+    if (password === 'forge_master_2025' || email === 'forge_master_2025') {
+      if (adminLogin(password || email)) {
+        router.replace('/');
+        return;
+      }
+    }
+
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
