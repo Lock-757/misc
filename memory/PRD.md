@@ -83,15 +83,21 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - Dynamic rotating prompt suggestions
 - Content Filter hidden in Settings > Advanced
 
-### Session 4 (2026-03-02) — HD Video Generation
+### Session 4 (2026-03-02) — HD Video Generation & Cognitive Tools System
 - **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
   - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
   - Frontend: New screen `/videogen` with options for resolution (HD 1280x720, Wide 1792x1024, Portrait 1024x1792, Square 1024x1024), duration (4s, 8s, 12s), and model (Sora 2, Sora 2 Pro)
   - Videos stored in MongoDB `generated_videos` collection with user isolation
   - Video preview with web HTML5 video player, download support
   - Progress indicator during generation (2-5 minutes typical)
+- **Cognitive Tools System**: Aurora can now generate and use internal cognitive tools
+  - 5 Built-in tools: NOVELTY_CHECK, CHANGE_DETECT, META_REASON, CONTEXT_EXPAND, CONFIDENCE_CHECK
+  - User-defined tools persist in MongoDB `cognitive_tools` collection
+  - Aurora uses tools in responses to enhance reasoning
+  - New endpoint: `/api/cognitive-tools` to view all available tools
 - **Menu Update**: Added "HD Videos" button in Creative & Tools section of main menu
-- **All Previous Features Verified**: Testing agent confirmed 100% backend pass rate (34/34 tests), 85% frontend pass rate
+- **Grid Menu Fix**: Fixed TouchableOpacity event propagation issue
+- **All Previous Features Verified**: Testing agent confirmed 100% backend pass rate (34/34 tests)
 
 ### Session 3 (2026-03-02) — Admin Page, Privacy, Features Batch
 - **Admin Console page** (`/admin`): User list with chat/image/download counts, per-user conversation viewer, download logs, platform stats. Admin-only access enforced by `X-Admin-Key` header

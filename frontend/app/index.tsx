@@ -780,7 +780,7 @@ export default function ChatScreen() {
             activeOpacity={1} 
             onPress={() => setShowMenu(false)}
           >
-            <View style={styles.menuContainer}>
+            <TouchableOpacity activeOpacity={1} style={styles.menuContainer} onPress={(e) => e.stopPropagation()}>
               <LinearGradient
                 colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                 style={styles.menuGradient}
@@ -944,7 +944,7 @@ export default function ChatScreen() {
                   </View>
                 </ScrollView>
               </LinearGradient>
-            </View>
+            </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
       </SafeAreaView>

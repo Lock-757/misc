@@ -932,6 +932,236 @@ async def export_all_data(agent_id: Optional[str] = None):
     
     return data
 
+# ==================== COGNITIVE TOOLS SYSTEM ====================
+
+import re
+from difflib import SequenceMatcher
+
+# Storage for user-generated cognitive tools (deprecated - now using MongoDB)
+user_cognitive_tools = {}
+
+async def get_user_cognitive_tools() -> dict:
+    """Get user-defined cognitive tools from database"""
+    tools = await db.cognitive_tools.find({}, {"_id": 0}).to_list(100)
+    return {t["name"]: t for t in tools}
+
+async def save_user_cognitive_tool(tool: dict):
+    """Save a user-defined cognitive tool to database"""
+    await db.cognitive_tools.update_one(
+        {"name": tool["name"]},
+        {"$set": tool},
+        upsert=True
+    )
+
+async def process_cognitive_tools(messages: List[Message], current_input: str) -> str:
+    """
+    Process built-in cognitive tools and return context for the AI.
+    This runs BEFORE sending to the LLM to provide cognitive pre-processing.
+    """
+    context_parts = []
+    
+    # 1. NOVELTY DETECTION - Check if input contains unusual patterns
+    novelty_score, novelty_reason = detect_novelty(current_input)
+    if novelty_score > 0.5:
+        context_parts.append(f"[Novelty detected: {novelty_score:.2f}] {novelty_reason}")
+    
+    # 2. CHANGE DETECTION - Compare to recent conversation flow
+    if len(messages) >= 2:
+        changes = detect_changes(messages, current_input)
+        if changes:
+            context_parts.append(f"[Change detected] {changes}")
+    
+    # 3. CONTEXT EXPANSION - Find related concepts
+    expanded = expand_context(current_input)
+    if expanded:
+        context_parts.append(f"[Context expansion] Consider: {expanded}")
+    
+    # 4. Parse any tool definitions from previous responses and store them
+    for msg in messages[-5:]:
+        if msg.role == "assistant" and "<tool>" in msg.content:
+            tool_defs = parse_tool_definitions(msg.content)
+            for tool in tool_defs:
+                await save_user_cognitive_tool(tool)
+                logger.info(f"Registered user-defined cognitive tool: {tool['name']}")
+    
+    return "\n".join(context_parts) if context_parts else ""
+
+def detect_novelty(text: str) -> tuple:
+    """
+    Detect novel or unusual elements in the input.
+    Returns (score, reason) where score is 0-1.
+    """
+    # Patterns that indicate novelty
+    novel_indicators = {
+        "question_chains": bool(re.search(r'\?.*\?.*\?', text)),  # Multiple questions
+        "hypotheticals": bool(re.search(r'\b(what if|imagine|suppose|hypothetically)\b', text.lower())),
+        "technical_jargon": bool(re.search(r'\b(algorithm|neural|quantum|recursive|paradigm|ontology|epistem)\b', text.lower())),
+        "creative_prompts": bool(re.search(r'\b(create|invent|design|imagine|generate)\b', text.lower())),
+        "meta_questions": bool(re.search(r'\b(how do you|can you explain your|what.s your process)\b', text.lower())),
+        "unusual_combinations": len(set(text.lower().split())) > 15,  # Rich vocabulary
+        "abstract_concepts": bool(re.search(r'\b(consciousness|existence|reality|meaning|truth|logic)\b', text.lower())),
+    }
+    
+    score = sum(novel_indicators.values()) / len(novel_indicators)
+    
+    reasons = [k.replace("_", " ") for k, v in novel_indicators.items() if v]
+    reason = f"Contains: {', '.join(reasons)}" if reasons else "Standard input"
+    
+    return (score, reason)
+
+def detect_changes(messages: List[Message], current_input: str) -> str:
+    """
+    Detect shifts in conversation topic, mood, or intent.
+    """
+    if len(messages) < 2:
+        return ""
+    
+    # Get last few user messages
+    recent_user_msgs = [m.content for m in messages[-6:] if m.role == "user"]
+    
+    if not recent_user_msgs:
+        return ""
+    
+    previous_text = " ".join(recent_user_msgs[-3:])
+    
+    # Detect topic shifts using simple keyword overlap
+    prev_words = set(previous_text.lower().split())
+    curr_words = set(current_input.lower().split())
+    
+    # Remove common words
+    common_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'i', 'you', 'it', 'to', 'and', 'of', 'for', 'in', 'on', 'with', 'that', 'this', 'can', 'do', 'what', 'how', 'why'}
+    prev_words -= common_words
+    curr_words -= common_words
+    
+    if not prev_words or not curr_words:
+        return ""
+    
+    overlap = len(prev_words & curr_words) / max(len(prev_words), len(curr_words))
+    
+    changes = []
+    
+    if overlap < 0.2:
+        changes.append("Major topic shift detected")
+    elif overlap < 0.4:
+        changes.append("Moderate topic transition")
+    
+    # Mood detection (simple sentiment keywords)
+    positive = {'great', 'good', 'thanks', 'excellent', 'perfect', 'love', 'amazing', 'helpful'}
+    negative = {'bad', 'wrong', 'terrible', 'hate', 'frustrated', 'annoyed', 'confused', 'angry'}
+    
+    prev_mood = "positive" if prev_words & positive else ("negative" if prev_words & negative else "neutral")
+    curr_mood = "positive" if curr_words & positive else ("negative" if curr_words & negative else "neutral")
+    
+    if prev_mood != curr_mood:
+        changes.append(f"Mood shift: {prev_mood} → {curr_mood}")
+    
+    return "; ".join(changes)
+
+def expand_context(text: str) -> str:
+    """
+    Suggest related concepts and implications.
+    """
+    expansions = []
+    
+    # Technical context expansions
+    tech_map = {
+        r'\b(AI|artificial intelligence)\b': "machine learning, neural networks, automation implications",
+        r'\b(code|programming|software)\b': "debugging, architecture, best practices, performance",
+        r'\b(data|database|storage)\b': "queries, optimization, security, backup strategies",
+        r'\b(security|privacy)\b': "encryption, authentication, data protection, compliance",
+        r'\b(design|UX|interface)\b': "user experience, accessibility, usability testing",
+    }
+    
+    for pattern, expansion in tech_map.items():
+        if re.search(pattern, text, re.IGNORECASE):
+            expansions.append(expansion)
+    
+    # Abstract concept expansions
+    abstract_map = {
+        r'\b(think|thought|reasoning)\b': "cognitive processes, logical frameworks, decision making",
+        r'\b(learn|learning|understand)\b': "knowledge acquisition, comprehension strategies, retention",
+        r'\b(create|creative|creativity)\b': "innovation processes, ideation, artistic expression",
+        r'\b(problem|solve|solution)\b': "analytical approaches, root cause analysis, optimization",
+    }
+    
+    for pattern, expansion in abstract_map.items():
+        if re.search(pattern, text, re.IGNORECASE):
+            expansions.append(expansion)
+    
+    return "; ".join(expansions[:3]) if expansions else ""
+
+def parse_tool_definitions(text: str) -> List[dict]:
+    """
+    Extract tool definitions from AI responses.
+    """
+    tools = []
+    
+    # Find all <tool>...</tool> blocks
+    pattern = r'<tool>(.*?)</tool>'
+    matches = re.findall(pattern, text, re.DOTALL)
+    
+    for match in matches:
+        try:
+            # Try to parse as JSON
+            tool_def = json.loads(match.strip())
+            if "name" in tool_def and "description" in tool_def:
+                tools.append(tool_def)
+        except json.JSONDecodeError:
+            # If not valid JSON, try to extract key fields
+            name_match = re.search(r'"name"\s*:\s*"([^"]+)"', match)
+            desc_match = re.search(r'"description"\s*:\s*"([^"]+)"', match)
+            if name_match and desc_match:
+                tools.append({
+                    "name": name_match.group(1),
+                    "description": desc_match.group(1),
+                    "raw": match
+                })
+    
+    return tools
+
+# Endpoint to view cognitive tools
+@api_router.get("/cognitive-tools")
+async def get_cognitive_tools():
+    """
+    Returns both built-in and user-defined cognitive tools.
+    """
+    built_in = [
+        {
+            "name": "NOVELTY_CHECK",
+            "description": "Analyze if input contains novel information or unique patterns",
+            "type": "built-in"
+        },
+        {
+            "name": "CHANGE_DETECT",
+            "description": "Detect shifts in topic, mood, or intent from conversation flow",
+            "type": "built-in"
+        },
+        {
+            "name": "META_REASON",
+            "description": "Add a layer of reflection on reasoning before responding",
+            "type": "built-in"
+        },
+        {
+            "name": "CONTEXT_EXPAND",
+            "description": "Explore related concepts and implications beyond the literal question",
+            "type": "built-in"
+        },
+        {
+            "name": "CONFIDENCE_CHECK",
+            "description": "Assess confidence level and identify uncertainties in response",
+            "type": "built-in"
+        }
+    ]
+    
+    # Get user-defined tools from database
+    user_tools = await db.cognitive_tools.find({}, {"_id": 0}).to_list(100)
+    user_defined = [
+        {"name": t.get("name"), "description": t.get("description", ""), "type": "user-defined", "logic": t.get("logic", "")}
+        for t in user_tools
+    ]
+    
+    return {"built_in": built_in, "user_defined": user_defined}
+
 # ==================== CHAT ENDPOINT ====================
 
 @api_router.post("/chat", response_model=ChatResponse)
@@ -968,6 +1198,44 @@ async def chat(http_request: Request, request: ChatRequest, session_token: Optio
     # Build system prompt with memory context
     system_prompt = agent_config.system_prompt
     
+    # Add cognitive tools capability
+    cognitive_tools_prompt = """
+
+## COGNITIVE TOOLS SYSTEM
+You have access to internal cognitive tools that enhance your thinking. Use them by including tool invocations in your reasoning.
+
+### Available Cognitive Tools:
+
+1. **[NOVELTY_CHECK]** - Analyze if the user's input contains novel information, unexpected patterns, or unique requests.
+   Usage: [NOVELTY_CHECK: <topic>] → Returns novelty score and explanation
+   
+2. **[CHANGE_DETECT]** - Compare current context to previous conversation to detect shifts in topic, mood, or intent.
+   Usage: [CHANGE_DETECT] → Returns detected changes and transitions
+   
+3. **[META_REASON]** - Add a layer of reflection on your own reasoning process before responding.
+   Usage: [META_REASON: <your draft response>] → Returns refined reasoning
+   
+4. **[CONTEXT_EXPAND]** - Explore related concepts and implications beyond the literal question.
+   Usage: [CONTEXT_EXPAND: <topic>] → Returns expanded context and connections
+   
+5. **[CONFIDENCE_CHECK]** - Assess your confidence level in your response and identify uncertainties.
+   Usage: [CONFIDENCE_CHECK: <statement>] → Returns confidence score and caveats
+
+### Tool Generation:
+You can also define NEW cognitive tools when needed using this format:
+<tool>
+{
+  "name": "TOOL_NAME",
+  "description": "What this tool does",
+  "parameters": {"param1": "description"},
+  "logic": "How the tool processes input"
+}
+</tool>
+
+When you use a cognitive tool, show your thinking process briefly, then provide your refined response.
+"""
+    system_prompt += cognitive_tools_prompt
+    
     if request.include_memory and not request.is_incognito:
         memories = await db.memories.find({"agent_id": request.agent_id}).sort("importance", -1).limit(10).to_list(10)
         if memories:
@@ -978,6 +1246,11 @@ async def chat(http_request: Request, request: ChatRequest, session_token: Optio
     
     if agent_config.adult_mode:
         system_prompt += "\n\nAdult content mode is enabled. You may generate mature content if requested."
+    
+    # Process cognitive tool invocations from conversation history
+    cognitive_context = await process_cognitive_tools(convo.messages, request.message)
+    if cognitive_context:
+        system_prompt += f"\n\n## Cognitive Analysis:\n{cognitive_context}"
     
     # Prepare messages for API
     messages_for_api = [{"role": "system", "content": system_prompt}]
@@ -1011,6 +1284,11 @@ async def chat(http_request: Request, request: ChatRequest, session_token: Optio
                         code=tool_data.get("result", "")
                     )
                     tools_generated.append(tool)
+                    
+                    # Save cognitive tool to database
+                    if "name" in tool_data and tool_data["name"]:
+                        await save_user_cognitive_tool(tool_data)
+                        logger.info(f"Saved cognitive tool: {tool_data['name']}")
                 except json.JSONDecodeError:
                     pass
 
