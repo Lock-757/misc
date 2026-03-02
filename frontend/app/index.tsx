@@ -82,7 +82,7 @@ export default function ChatScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
   // Auth
-  const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated, isAdmin, logout } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
