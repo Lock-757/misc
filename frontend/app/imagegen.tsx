@@ -128,11 +128,13 @@ export default function ImageGenScreen() {
         prompt: enhancedPrompt,
         size: selectedSize,
         quality: 'hd',
+        is_admin: isAdmin && bypassFilters,
       });
 
       // Add new image to the top of the list
       setGeneratedImages(prev => [response.data, ...prev]);
       setPrompt('');
+      Keyboard.dismiss();
       
       Alert.alert('Success', 'Image generated successfully!');
     } catch (error: any) {
