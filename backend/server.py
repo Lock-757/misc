@@ -1046,6 +1046,9 @@ async def generate_image(request: ImageGenerationRequest):
     agent = await db.agents.find_one({"id": request.agent_id})
     adult_mode = agent.get("adult_mode", False) if agent else False
     
+    # Admin bypass - no filtering at all
+    is_admin = request.is_admin
+    
     if not GROK_API_KEY:
         raise HTTPException(status_code=500, detail="API key not configured")
     
@@ -1060,7 +1063,8 @@ async def generate_image(request: ImageGenerationRequest):
             if request.quality == "hd":
                 enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
             
-            if not adult_mode:
+            # Only add SFW prefix if NOT admin and NOT adult_mode
+            if not is_admin and not adult_mode:
                 enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
             
             payload = {
