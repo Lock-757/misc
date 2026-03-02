@@ -230,6 +230,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Logout error:', error);
     } finally {
       await removeToken();
+      // Clear admin status too
+      if (Platform.OS === 'web') {
+        localStorage.removeItem('forge_admin');
+      } else {
+        await SecureStore.deleteItemAsync('forge_admin');
+      }
+      setIsAdmin(false);
       setUser(null);
     }
   };
@@ -243,13 +250,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         isLoading,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user || isAdmin,
+        isAdmin,
         login,
         register,
         loginWithGoogle,
         handleGoogleCallback,
         logout,
         refreshUser,
+        adminLogin,
       }}
     >
       {children}
