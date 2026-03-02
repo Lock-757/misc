@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
+import { getStoredToken } from '../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -47,9 +48,10 @@ export default function HistoryScreen() {
 
   const loadConversations = async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/conversations`);
-      // Sort by updated_at descending (most recent first)
-      const sorted = res.data.sort((a: Conversation, b: Conversation) => 
+      const token = await getStoredToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${API_URL}/api/conversations`, { headers });
+      const sorted = res.data.sort((a: Conversation, b: Conversation) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
       setConversations(sorted);
@@ -89,7 +91,9 @@ export default function HistoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await axios.delete(`${API_URL}/api/conversations/${id}`);
+              const token = await getStoredToken();
+              const headers = token ? { Authorization: `Bearer ${token}` } : {};
+              await axios.delete(`${API_URL}/api/conversations/${id}`, { headers });
               setConversations(prev => prev.filter(c => c.id !== id));
             } catch (error) {
               Alert.alert('Error', 'Failed to delete conversation');

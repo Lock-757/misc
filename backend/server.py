@@ -855,10 +855,12 @@ async def search(request: SearchRequest):
 async def get_conversations(request: Request, agent_id: Optional[str] = None, include_incognito: bool = False, session_token: Optional[str] = Cookie(None)):
     # Get current user
     user = await get_current_user(request, session_token)
-    
-    query = {}
-    if user:
-        query["user_id"] = user["user_id"]
+
+    if not user:
+        # No valid session — never expose other users' data
+        return []
+
+    query = {"user_id": user["user_id"]}
     if agent_id:
         query["agent_id"] = agent_id
     if not include_incognito:
@@ -929,26 +931,30 @@ async def export_all_data(agent_id: Optional[str] = None):
 # ==================== CHAT ENDPOINT ====================
 
 @api_router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(http_request: Request, request: ChatRequest, session_token: Optional[str] = Cookie(None)):
+    # Get authenticated user — use session user_id if available, fallback to body
+    auth_user = await get_current_user(http_request, session_token)
+    effective_user_id = auth_user["user_id"] if auth_user else request.user_id
+
     # Get or create agent
     agent = await db.agents.find_one({"id": request.agent_id})
     if not agent:
         default_agent = AgentConfig(id=request.agent_id)
         await db.agents.insert_one(default_agent.model_dump())
         agent = default_agent.model_dump()
-    
+
     agent_config = AgentConfig(**agent)
-    
+
     # Get or create conversation
     if request.conversation_id:
         convo = await db.conversations.find_one({"id": request.conversation_id})
         if not convo:
-            convo = Conversation(id=request.conversation_id, agent_id=request.agent_id, user_id=request.user_id, is_incognito=request.is_incognito)
+            convo = Conversation(id=request.conversation_id, agent_id=request.agent_id, user_id=effective_user_id, is_incognito=request.is_incognito)
             await db.conversations.insert_one(convo.model_dump())
         else:
             convo = Conversation(**convo)
     else:
-        convo = Conversation(agent_id=request.agent_id, user_id=request.user_id, title=request.message[:50], is_incognito=request.is_incognito)
+        convo = Conversation(agent_id=request.agent_id, user_id=effective_user_id, title=request.message[:50], is_incognito=request.is_incognito)
         await db.conversations.insert_one(convo.model_dump())
     
     # Add user message
@@ -1046,11 +1052,13 @@ async def chat(request: ChatRequest):
 # ==================== IMAGE GENERATION ENDPOINT ====================
 
 @api_router.post("/generate-image", response_model=ImageGenerationResponse)
-async def generate_image(request: ImageGenerationRequest):
-    agent = await db.agents.find_one({"id": request.agent_id})
-    adult_mode = agent.get("adult_mode", False) if agent else False
+async def generate_image(request: Request, img_request: ImageGenerationRequest, session_token: Optional[str] = Cookie(None)):
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "anonymous"
 
-    is_admin = request.is_admin
+    agent = await db.agents.find_one({"id": img_request.agent_id})
+    adult_mode = agent.get("adult_mode", False) if agent else False
+    is_admin = img_request.is_admin
 
     if not GROK_API_KEY:
         raise HTTPException(status_code=500, detail="API key not configured")
@@ -1062,11 +1070,10 @@ async def generate_image(request: ImageGenerationRequest):
                 "Content-Type": "application/json"
             }
 
-            enhanced_prompt = request.prompt
-            if request.quality == "hd":
-                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
+            enhanced_prompt = img_request.prompt
+            if img_request.quality == "hd":
+                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {img_request.prompt}"
 
-            # Only add SFW prefix if NOT admin and NOT adult_mode
             if not is_admin and not adult_mode:
                 enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
 
@@ -1099,23 +1106,24 @@ async def generate_image(request: ImageGenerationRequest):
 
                 image_record = {
                     "id": str(uuid.uuid4()),
-                    "agent_id": request.agent_id,
-                    "prompt": request.prompt,
+                    "user_id": user_id,
+                    "agent_id": img_request.agent_id,
+                    "prompt": img_request.prompt,
                     "image_base64": image_base64,
-                    "size": request.size,
-                    "quality": request.quality,
+                    "size": img_request.size,
+                    "quality": img_request.quality,
                     "adult_mode": adult_mode,
                     "created_at": datetime.utcnow()
                 }
                 await db.generated_images.insert_one(image_record)
 
-                await trigger_webhooks(request.agent_id, "image", {"prompt": request.prompt})
+                await trigger_webhooks(img_request.agent_id, "image", {"prompt": img_request.prompt})
 
                 return ImageGenerationResponse(
                     id=image_record["id"],
-                    prompt=request.prompt,
+                    prompt=img_request.prompt,
                     image_base64=image_base64,
-                    size=request.size
+                    size=img_request.size
                 )
             else:
                 raise HTTPException(status_code=500, detail="Invalid response from image API")
@@ -1127,8 +1135,13 @@ async def generate_image(request: ImageGenerationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/generated-images")
-async def get_generated_images(agent_id: Optional[str] = None, limit: int = 20):
-    query = {"agent_id": agent_id} if agent_id else {}
+async def get_generated_images(request: Request, agent_id: Optional[str] = None, limit: int = 20, session_token: Optional[str] = Cookie(None)):
+    user = await get_current_user(request, session_token)
+    if not user:
+        return []
+    query = {"user_id": user["user_id"]}
+    if agent_id:
+        query["agent_id"] = agent_id
     images = await db.generated_images.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return images
 

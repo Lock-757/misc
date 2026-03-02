@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getStoredToken } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -93,7 +93,9 @@ export default function ImageGenScreen() {
       }
       
       // Load generated images
-      const imagesRes = await axios.get(`${API_URL}/api/generated-images`);
+      const token = await getStoredToken();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      const imagesRes = await axios.get(`${API_URL}/api/generated-images`, { headers: authHeaders });
       setGeneratedImages(imagesRes.data || []);
     } catch (error) {
       console.log('Error loading data:', error);
@@ -123,13 +125,15 @@ export default function ImageGenScreen() {
         }
       }
 
+      const token = await getStoredToken();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
       const response = await axios.post(`${API_URL}/api/generate-image`, {
         agent_id: agent.id,
         prompt: enhancedPrompt,
         size: selectedSize,
         quality: 'hd',
         is_admin: isAdmin && bypassFilters,
-      });
+      }, { headers: authHeaders });
 
       // Add new image to the top of the list
       setGeneratedImages(prev => [response.data, ...prev]);
@@ -157,7 +161,9 @@ export default function ImageGenScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await axios.delete(`${API_URL}/api/generated-images/${imageId}`);
+              const token = await getStoredToken();
+              const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+              await axios.delete(`${API_URL}/api/generated-images/${imageId}`, { headers: authHeaders });
               setGeneratedImages(prev => prev.filter(img => img.id !== imageId));
               setPreviewImage(null);
             } catch (error) {

@@ -41,11 +41,15 @@ async function storeToken(token: string) {
   }
 }
 
-async function getToken(): Promise<string | null> {
-  if (Platform.OS === 'web') {
-    return localStorage.getItem('session_token');
-  } else {
+// Exported so other screens can get the stored auth token
+export async function getStoredToken(): Promise<string | null> {
+  try {
+    if (Platform.OS === 'web') {
+      return localStorage.getItem('session_token');
+    }
     return await SecureStore.getItemAsync('session_token');
+  } catch {
+    return null;
   }
 }
 
@@ -99,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const token = await getToken();
+        const token = await getStoredToken();
         if (token) {
           const response = await axios.get(`${API_URL}/api/auth/me`, {
             headers: { Authorization: `Bearer ${token}` },
