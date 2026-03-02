@@ -5,18 +5,23 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   ScrollView,
   Image,
   ActivityIndicator,
   Alert,
   Dimensions,
   Modal,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -30,6 +35,7 @@ const METALLIC = {
   platinum: '#E5E5EA',
   accent: '#6366F1',
   danger: '#EF4444',
+  warning: '#F59E0B',
 };
 
 const IMAGE_SIZES = [
