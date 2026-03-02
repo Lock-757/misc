@@ -292,7 +292,6 @@ export default function ImageEditorScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
-          <TouchableWithoutFeedback onPress={dismissKeyboard}>
             <View style={styles.innerContainer}>
               {/* Header */}
               <View style={styles.header}>
@@ -415,7 +414,6 @@ export default function ImageEditorScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
 
         {renderAdminPanel()}
