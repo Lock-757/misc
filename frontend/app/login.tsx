@@ -34,7 +34,7 @@ const METALLIC = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, register, loginWithGoogle, isLoading: authLoading, adminLogin } = useAuth();
+  const { login, register, loginWithGoogle, isLoading: authLoading, adminLogin, isAuthenticated } = useAuth();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -43,13 +43,19 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Navigate home as soon as auth state says authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/');
+    }
+  }, [isAuthenticated]);
+
   const handleEmailAuth = async () => {
     // Check for admin secret first (any field can contain it)
     if (password === 'forge_master_2025' || email === 'forge_master_2025') {
-      if (adminLogin(password || email)) {
-        router.replace('/');
-        return;
-      }
+      adminLogin(password || email);
+      // Navigation handled by useEffect watching isAuthenticated
+      return;
     }
 
     if (!email.trim() || !password.trim()) {

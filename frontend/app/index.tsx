@@ -15,6 +15,8 @@ import {
   Alert,
   Modal,
   Easing,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -98,6 +100,19 @@ export default function ChatScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  // Session-level adult mode (activated by "adult_mode" prompt, not stored)
+  const [sessionAdultMode, setSessionAdultMode] = useState(false);
+
+  // Auto-logout admin when app goes to background
+  useEffect(() => {
+    if (!isAdmin) return;
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'background' || state === 'inactive') {
+        logout();
+      }
+    });
+    return () => sub.remove();
+  }, [isAdmin]);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   
   // Rotating suggestions - different categories
@@ -332,6 +347,19 @@ export default function ChatScreen() {
   const sendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
 
+    // Secret adult_mode activation prompt
+    if (inputText.trim().toLowerCase() === 'adult_mode') {
+      setSessionAdultMode(true);
+      setInputText('');
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Content filter disabled for this session.',
+        timestamp: new Date().toISOString(),
+      }]);
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -348,12 +376,15 @@ export default function ChatScreen() {
     }, 100);
 
     try {
+      const token = await import('../context/AuthContext').then(m => m.getStoredToken());
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const response = await axios.post(`${API_URL}/api/chat`, {
         agent_id: agent.id,
         conversation_id: conversationId,
         message: userMessage.content,
         user_id: user?.user_id,
-      });
+        session_adult_mode: sessionAdultMode || isAdmin,
+      }, { headers });
 
       setConversationId(response.data.conversation_id);
       
@@ -875,6 +906,20 @@ export default function ChatScreen() {
 
                   {/* Account */}
                   <Text style={styles.menuSectionTitle}>Account</Text>
+
+                  {/* Admin-only button */}
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={styles.adminButton}
+                      onPress={() => { setShowMenu(false); router.push('/admin'); }}
+                      data-testid="admin-console-btn"
+                    >
+                      <Ionicons name="shield" size={18} color="#EF4444" />
+                      <Text style={styles.adminButtonText}>Admin Console</Text>
+                      <Ionicons name="chevron-forward" size={14} color="#EF4444" />
+                    </TouchableOpacity>
+                  )}
+
                   <View style={styles.userCard}>
                     <View style={styles.userInfo}>
                       <View style={styles.userAvatar}>
@@ -1177,6 +1222,23 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     padding: 8,
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.2)',
+  },
+  adminButtonText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
   },
   danger: {
     color: '#EF4444',

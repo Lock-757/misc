@@ -37,6 +37,7 @@ export default function RootLayout() {
             <Stack.Screen name="bookmarks" options={{ presentation: 'modal' }} />
             <Stack.Screen name="scheduled" options={{ presentation: 'modal' }} />
             <Stack.Screen name="export" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="admin" options={{ presentation: 'modal' }} />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>

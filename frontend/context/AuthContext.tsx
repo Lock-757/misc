@@ -219,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      const token = await getToken();
+      const token = await getStoredToken();
       await axios.post(
         `${API_URL}/api/auth/logout`,
         {},
@@ -246,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = async () => {
     // Re-validate token against the server
     try {
-      const token = await getToken();
+      const token = await getStoredToken();
       if (token) {
         const response = await axios.get(`${API_URL}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },

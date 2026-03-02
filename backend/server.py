@@ -538,7 +538,11 @@ async def logout(request: Request, response: Response, session_token: Optional[s
 
 @api_router.post("/agents", response_model=AgentConfig)
 async def create_agent(config: AgentConfigCreate):
-    agent = AgentConfig(**config.model_dump())
+    data = config.model_dump()
+    # Ensure system_prompt has a default value if not provided
+    if not data.get("system_prompt"):
+        data["system_prompt"] = "You are Aurora, a highly intelligent AI assistant."
+    agent = AgentConfig(**data)
     await db.agents.insert_one(agent.model_dump())
     return agent
 
@@ -1234,6 +1238,81 @@ async def cleanup_incognito():
     """Delete all incognito conversations"""
     result = await db.conversations.delete_many({"is_incognito": True})
     return {"deleted": result.deleted_count}
+
+# ==================== DOWNLOAD TRACKING ====================
+
+class DownloadTrackRequest(BaseModel):
+    image_id: str
+    image_prompt: Optional[str] = ""
+
+@api_router.post("/track-download")
+async def track_download(request: Request, body: DownloadTrackRequest, session_token: Optional[str] = Cookie(None)):
+    user = await get_current_user(request, session_token)
+    log = {
+        "id": str(uuid.uuid4()),
+        "image_id": body.image_id,
+        "image_prompt": body.image_prompt,
+        "user_id": user["user_id"] if user else "anonymous",
+        "user_email": user.get("email", "unknown") if user else "anonymous",
+        "downloaded_at": datetime.now(timezone.utc).isoformat(),
+        "ip": request.client.host if request.client else "unknown",
+    }
+    await db.download_logs.insert_one(log)
+    return {"status": "logged"}
+
+# ==================== ADMIN ENDPOINTS ====================
+
+ADMIN_SECRET = "forge_master_2025"
+
+async def require_admin(request: Request):
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if admin_key != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+@api_router.get("/admin/users")
+async def admin_get_users(request: Request):
+    await require_admin(request)
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    result = []
+    for u in users:
+        uid = u.get("user_id", "")
+        conv_count = await db.conversations.count_documents({"user_id": uid})
+        image_count = await db.generated_images.count_documents({"user_id": uid})
+        dl_count = await db.download_logs.count_documents({"user_id": uid})
+        result.append({**u, "conversation_count": conv_count, "image_count": image_count, "download_count": dl_count})
+    return result
+
+@api_router.get("/admin/users/{user_id}/conversations")
+async def admin_get_user_conversations(user_id: str, request: Request):
+    await require_admin(request)
+    convos = await db.conversations.find({"user_id": user_id}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    return convos
+
+@api_router.get("/admin/users/{user_id}/images")
+async def admin_get_user_images(user_id: str, request: Request):
+    await require_admin(request)
+    images = await db.generated_images.find({"user_id": user_id}, {"_id": 0, "image_base64": 0}).sort("created_at", -1).to_list(200)
+    return images
+
+@api_router.get("/admin/download-logs")
+async def admin_get_download_logs(request: Request):
+    await require_admin(request)
+    logs = await db.download_logs.find({}, {"_id": 0}).sort("downloaded_at", -1).to_list(1000)
+    return logs
+
+@api_router.get("/admin/stats")
+async def admin_get_stats(request: Request):
+    await require_admin(request)
+    total_users = await db.users.count_documents({})
+    total_convos = await db.conversations.count_documents({})
+    total_images = await db.generated_images.count_documents({})
+    total_downloads = await db.download_logs.count_documents({})
+    return {
+        "total_users": total_users,
+        "total_conversations": total_convos,
+        "total_images": total_images,
+        "total_downloads": total_downloads,
+    }
 
 # Include router and middleware
 app.include_router(api_router)

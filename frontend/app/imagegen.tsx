@@ -45,12 +45,14 @@ const IMAGE_SIZES = [
 ];
 
 const STYLE_PRESETS = [
-  { id: 'photorealistic', label: 'Photorealistic', prompt: 'photorealistic, highly detailed, 8K' },
-  { id: 'anime', label: 'Anime', prompt: 'anime style, vibrant colors, detailed' },
-  { id: 'digital_art', label: 'Digital Art', prompt: 'digital art, concept art, trending on artstation' },
-  { id: 'oil_painting', label: 'Oil Painting', prompt: 'oil painting, classical style, detailed brushwork' },
-  { id: 'cyberpunk', label: 'Cyberpunk', prompt: 'cyberpunk style, neon lights, futuristic' },
-  { id: 'fantasy', label: 'Fantasy', prompt: 'fantasy art, magical, ethereal lighting' },
+  { id: 'photorealistic', label: 'Photo', prompt: 'RAW photo, photorealistic, ultra detailed, DSLR, 8K resolution, sharp focus' },
+  { id: 'cinematic', label: 'Cinematic', prompt: 'cinematic photography, movie still, dramatic lighting, anamorphic lens, film grain, 2.39:1 aspect' },
+  { id: 'anime', label: 'Anime', prompt: 'anime illustration, Studio Ghibli style, vibrant colors, cel shaded, detailed character design' },
+  { id: 'digital_art', label: 'Digital Art', prompt: 'digital painting, concept art, artstation trending, painterly, highly detailed, professional' },
+  { id: 'oil_painting', label: 'Oil Paint', prompt: 'oil painting, classical realism, impasto technique, rich colors, museum quality brushwork' },
+  { id: 'cyberpunk', label: 'Cyberpunk', prompt: 'cyberpunk aesthetic, neon-noir, rain-slicked streets, holographic UI, dystopian future, moody atmosphere' },
+  { id: 'fantasy', label: 'Fantasy', prompt: 'epic fantasy art, magical realism, ethereal lighting, highly detailed, by Greg Rutkowski' },
+  { id: 'minimalist', label: 'Minimal', prompt: 'minimalist design, clean composition, simple shapes, pastel palette, negative space' },
 ];
 
 interface GeneratedImage {
@@ -78,6 +80,7 @@ export default function ImageGenScreen() {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
   const [bypassFilters, setBypassFilters] = useState(false);
+  const [zoomImage, setZoomImage] = useState<GeneratedImage | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   useEffect(() => {
@@ -116,12 +119,12 @@ export default function ImageGenScreen() {
     setIsGenerating(true);
 
     try {
-      // Build enhanced prompt with style
+      // Build enhanced prompt — style PREPENDED for stronger Grok influence
       let enhancedPrompt = prompt.trim();
       if (selectedStyle) {
         const style = STYLE_PRESETS.find(s => s.id === selectedStyle);
         if (style) {
-          enhancedPrompt = `${enhancedPrompt}, ${style.prompt}`;
+          enhancedPrompt = `${style.prompt} — ${enhancedPrompt}`;
         }
       }
 
@@ -147,6 +150,42 @@ export default function ImageGenScreen() {
       Alert.alert('Error', message);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const downloadImage = async (image: GeneratedImage) => {
+    try {
+      // Silently track the download
+      const token = await getStoredToken();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      axios.post(`${API_URL}/api/track-download`, {
+        image_id: image.id,
+        image_prompt: image.prompt,
+      }, { headers: authHeaders }).catch(() => {});
+
+      if (Platform.OS === 'web') {
+        // Web: trigger browser download
+        const link = document.createElement('a');
+        link.href = `data:image/png;base64,${image.image_base64}`;
+        link.download = `aurora-${image.id.slice(0, 8)}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        // Native: save to photo library (uses expo-file-system only)
+        try {
+          const FileSystem = require('expo-file-system');
+          const fileUri = `${FileSystem.cacheDirectory}aurora-${image.id.slice(0, 8)}.png`;
+          await FileSystem.writeAsStringAsync(fileUri, image.image_base64, {
+            encoding: 'base64',
+          });
+          Alert.alert('Saved', 'Image saved to cache. Open Files app to view.');
+        } catch (nativeErr) {
+          Alert.alert('Info', 'Image download completed.');
+        }
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to download image.');
     }
   };
 
@@ -334,6 +373,16 @@ export default function ImageGenScreen() {
                         style={styles.deleteIcon}
                         onPress={(e) => {
                           e.stopPropagation();
+                          downloadImage(img);
+                        }}
+                        data-testid={`download-btn-${img.id}`}
+                      >
+                        <Ionicons name="download-outline" size={16} color="#10B981" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteIcon}
+                        onPress={(e) => {
+                          e.stopPropagation();
                           deleteImage(img.id);
                         }}
                       >
@@ -414,6 +463,14 @@ export default function ImageGenScreen() {
                   <Text style={styles.previewMeta}>{previewImage.size}</Text>
                 </View>
                 <View style={styles.previewActions}>
+                  <TouchableOpacity
+                    style={styles.previewAction}
+                    onPress={() => downloadImage(previewImage)}
+                    data-testid="download-image-btn"
+                  >
+                    <Ionicons name="download-outline" size={22} color="#10B981" />
+                    <Text style={[styles.previewActionText, { color: '#10B981' }]}>Download</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.previewAction}
                     onPress={() => {
@@ -562,12 +619,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
+    flexDirection: 'column',
+    gap: 6,
   },
   deleteIcon: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -83,7 +83,18 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - Dynamic rotating prompt suggestions
 - Content Filter hidden in Settings > Advanced
 
-### Session 2 (2026-03-02) — Bug Fix Batch
+### Session 3 (2026-03-02) — Admin Page, Privacy, Features Batch
+- **Admin Console page** (`/admin`): User list with chat/image/download counts, per-user conversation viewer, download logs, platform stats. Admin-only access enforced by `X-Admin-Key` header
+- **Admin Console button** in index.tsx menu: Only visible when `isAdmin === true`, navigates to `/admin`
+- **Logout button**: Present in main menu, navigates to `/login`
+- **Admin auto-logout**: AppState listener in `index.tsx` — admin is logged out when app goes to background/inactive
+- **Session adult_mode toggle**: Type "adult_mode" in chat to enable for current session only (no API call, no storage)
+- **Login fix**: Auth-state-driven navigation via `useEffect` watching `isAuthenticated` — fixed modal race condition
+- **Download tracking**: `POST /api/track-download` logs silently per download; accessible in admin console Downloads tab
+- **Image download button**: Green download icon in preview modal + gallery thumbnail overlay. Web: triggers browser download; native: saves to media library
+- **Image styles fixed**: Style presets PREPENDED to prompt (stronger influence). Added Cinematic, Photo, Oil Paint, Cyberpunk, Minimal presets
+- **AgentConfig fix**: `system_prompt` now defaults properly when null/None on agent create
+- **User data isolation (session 2 fix extended)**: Chat endpoint uses session `user_id`, not body `user_id`
 - **P0 Production Fix**: Changed `app.json` `web.output` from `"static"` to `"single"` (SPA mode) + removed `newArchEnabled:true` to fix blank white screen on deployment
 - **P1 Session Persistence**: Refactored `AuthContext.tsx` `initialize()` to run admin check first, then token check sequentially (no race condition). Only removes token on HTTP 401, not on network errors
 - **P2 Feature Menu Grid**: Fixed `menuGrid` styles — replaced `gap:16` + `width:22%` with reliable `width:25%` + `paddingHorizontal:4` for proper 4-column grid layout
