@@ -525,7 +525,7 @@ export default function ChatScreen() {
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>{agent.model.split('-')[0]}</Text>
-                  {agent.adult_mode && (
+                  {agent.adult_mode && !isAdmin && (
                     <View style={styles.adultBadgeSmall}>
                       <Text style={styles.adultBadgeText}>18+</Text>
                     </View>
