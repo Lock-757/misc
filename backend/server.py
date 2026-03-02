@@ -1156,6 +1156,118 @@ async def delete_generated_image(image_id: str):
         raise HTTPException(status_code=404, detail="Image not found")
     return {"message": "Image deleted"}
 
+# ==================== VIDEO GENERATION ENDPOINT ====================
+
+from emergentintegrations.llm.openai.video_generation import OpenAIVideoGeneration
+
+class VideoGenerationRequest(BaseModel):
+    prompt: str
+    size: str = "1280x720"  # "1280x720", "1792x1024", "1024x1792", "1024x1024"
+    duration: int = 4  # 4, 8, or 12 seconds
+    model: str = "sora-2"  # "sora-2" or "sora-2-pro"
+
+class VideoGenerationResponse(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    prompt: str
+    video_base64: str
+    size: str
+    duration: int
+    status: str = "completed"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+@api_router.post("/generate-video", response_model=VideoGenerationResponse)
+async def generate_video(request: Request, vid_request: VideoGenerationRequest, session_token: Optional[str] = Cookie(None)):
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "anonymous"
+
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    # Validate parameters
+    valid_sizes = ["1280x720", "1792x1024", "1024x1792", "1024x1024"]
+    valid_durations = [4, 8, 12]
+    valid_models = ["sora-2", "sora-2-pro"]
+    
+    if vid_request.size not in valid_sizes:
+        raise HTTPException(status_code=400, detail=f"Invalid size. Must be one of: {valid_sizes}")
+    if vid_request.duration not in valid_durations:
+        raise HTTPException(status_code=400, detail=f"Invalid duration. Must be one of: {valid_durations}")
+    if vid_request.model not in valid_models:
+        raise HTTPException(status_code=400, detail=f"Invalid model. Must be one of: {valid_models}")
+
+    try:
+        # Run video generation in thread pool to avoid blocking
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def generate_video_sync():
+            video_gen = OpenAIVideoGeneration(api_key=EMERGENT_LLM_KEY)
+            video_bytes = video_gen.text_to_video(
+                prompt=vid_request.prompt,
+                model=vid_request.model,
+                size=vid_request.size,
+                duration=vid_request.duration,
+                max_wait_time=600
+            )
+            return video_bytes
+        
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            video_bytes = await loop.run_in_executor(executor, generate_video_sync)
+        
+        if not video_bytes:
+            raise HTTPException(status_code=500, detail="Video generation failed - no data returned")
+        
+        # Convert to base64
+        video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+        
+        # Store in database
+        video_record = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "prompt": vid_request.prompt,
+            "video_base64": video_base64,
+            "size": vid_request.size,
+            "duration": vid_request.duration,
+            "model": vid_request.model,
+            "created_at": datetime.utcnow()
+        }
+        await db.generated_videos.insert_one(video_record)
+        
+        logger.info(f"Video generated successfully for user {user_id}")
+        
+        return VideoGenerationResponse(
+            id=video_record["id"],
+            prompt=vid_request.prompt,
+            video_base64=video_base64,
+            size=vid_request.size,
+            duration=vid_request.duration
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Video generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+
+@api_router.get("/generated-videos")
+async def get_generated_videos(request: Request, limit: int = 20, session_token: Optional[str] = Cookie(None)):
+    user = await get_current_user(request, session_token)
+    if not user:
+        return []
+    videos = await db.generated_videos.find(
+        {"user_id": user["user_id"]}, 
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return videos
+
+@api_router.delete("/generated-videos/{video_id}")
+async def delete_generated_video(video_id: str):
+    result = await db.generated_videos.delete_one({"id": video_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return {"message": "Video deleted"}
+
 # ==================== UI CONFIG ENDPOINTS ====================
 
 @api_router.get("/ui-config", response_model=UIConfig)

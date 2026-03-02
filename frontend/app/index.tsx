@@ -860,6 +860,12 @@ export default function ChatScreen() {
                       </View>
                       <Text style={styles.menuLabel}>HD Images</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/videogen'); }} data-testid="menu-videogen-btn">
+                      <View style={[styles.menuIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
+                        <Ionicons name="videocam" size={22} color="#8B5CF6" />
+                      </View>
+                      <Text style={styles.menuLabel}>HD Videos</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/image-editor'); }}>
                       <View style={[styles.menuIcon, { backgroundColor: '#A855F7' + '20' }]}>
                         <Ionicons name="brush" size={22} color="#A855F7" />
@@ -871,12 +877,6 @@ export default function ChatScreen() {
                         <Ionicons name="construct" size={22} color="#F97316" />
                       </View>
                       <Text style={styles.menuLabel}>Tools</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/scheduled'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#EF4444' + '20' }]}>
-                        <Ionicons name="alarm" size={22} color="#EF4444" />
-                      </View>
-                      <Text style={styles.menuLabel}>Scheduled</Text>
                     </TouchableOpacity>
                   </View>
 

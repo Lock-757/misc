@@ -83,6 +83,16 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - Dynamic rotating prompt suggestions
 - Content Filter hidden in Settings > Advanced
 
+### Session 4 (2026-03-02) — HD Video Generation
+- **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
+  - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
+  - Frontend: New screen `/videogen` with options for resolution (HD 1280x720, Wide 1792x1024, Portrait 1024x1792, Square 1024x1024), duration (4s, 8s, 12s), and model (Sora 2, Sora 2 Pro)
+  - Videos stored in MongoDB `generated_videos` collection with user isolation
+  - Video preview with web HTML5 video player, download support
+  - Progress indicator during generation (2-5 minutes typical)
+- **Menu Update**: Added "HD Videos" button in Creative & Tools section of main menu
+- **All Previous Features Verified**: Testing agent confirmed 100% backend pass rate (34/34 tests), 85% frontend pass rate
+
 ### Session 3 (2026-03-02) — Admin Page, Privacy, Features Batch
 - **Admin Console page** (`/admin`): User list with chat/image/download counts, per-user conversation viewer, download logs, platform stats. Admin-only access enforced by `X-Admin-Key` header
 - **Admin Console button** in index.tsx menu: Only visible when `isAdmin === true`, navigates to `/admin`
@@ -107,10 +117,11 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 ## Prioritized Backlog
 
 ### P0 — Critical
-- [ ] Voice-to-text on main chat screen (user request, deferred)
+- [x] HD Video Generation (Sora 2) — COMPLETED Session 4
 - [ ] Verify production deployment shows app correctly after `output:single` change
 
 ### P1 — High Priority
+- [ ] Voice-to-text on main chat screen (user request, deferred for cost assessment)
 - [ ] Integrate Claude API (placeholder exists)
 - [ ] Integrate Kimi LLM API (placeholder exists)
 - [ ] Agents should be user-scoped (currently global — all users share same agents)
