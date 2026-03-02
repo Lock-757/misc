@@ -61,7 +61,7 @@ class AgentConfig(BaseModel):
     avatar_color: str = "#7C7C8A"
     system_prompt: str = "You are Nova, a highly intelligent AI assistant."
     personality: str = "Friendly and professional"
-    model: str = "grok-3-latest"
+    model: str = "grok-3"
     temperature: float = 0.7
     adult_mode: bool = False
     tools: List[Tool] = []
@@ -76,7 +76,7 @@ class AgentConfigCreate(BaseModel):
     avatar_color: Optional[str] = "#7C7C8A"
     system_prompt: Optional[str] = None
     personality: Optional[str] = "Friendly and professional"
-    model: Optional[str] = "grok-3-latest"
+    model: Optional[str] = "grok-3"
     temperature: Optional[float] = 0.7
     adult_mode: Optional[bool] = False
     is_template: Optional[bool] = False

@@ -48,7 +48,9 @@ const COLORS = [
 const MODELS = [
   { id: 'grok-3-latest', label: 'Grok 3', sublabel: 'Latest', provider: 'xAI' },
   { id: 'grok-3-fast', label: 'Grok 3', sublabel: 'Fast', provider: 'xAI' },
-  { id: 'grok-2', label: 'Grok 2', sublabel: 'Standard', provider: 'xAI' },
+  { id: 'grok-3', label: 'Grok 3', sublabel: 'Recommended', provider: 'xAI' },
+  { id: 'grok-3-mini', label: 'Grok 3 Mini', sublabel: 'Fast', provider: 'xAI' },
+  { id: 'grok-4-0709', label: 'Grok 4', sublabel: 'Most Capable', provider: 'xAI' },
   { id: 'claude-placeholder', label: 'Claude', sublabel: 'Soon', provider: 'Anthropic', disabled: true },
   { id: 'kimi-placeholder', label: 'Kimi', sublabel: 'Soon', provider: 'Moonshot', disabled: true },
 ];
