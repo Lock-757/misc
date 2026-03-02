@@ -26,10 +26,14 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Grok API key kept in env for future reference (not actively used)
-# All AI features now powered by Gemini via Emergent integrations
+# Grok API setup
+GROK_API_KEY = os.environ.get('GROK_API_KEY', '')
+grok_client = AsyncOpenAI(
+    api_key=GROK_API_KEY,
+    base_url="https://api.x.ai/v1"
+) if GROK_API_KEY else None
 
-# Gemini setup via Emergent integrations
+# Gemini kept as fallback via Emergent integrations
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
@@ -971,49 +975,45 @@ async def chat(request: ChatRequest):
         if msg.role in ["user", "assistant"]:
             messages_for_api.append({"role": msg.role, "content": msg.content})
     
-    # Call Gemini via Emergent integrations
+    # Call Grok API
     tools_generated = []
     assistant_content = ""
 
-    try:
-        gemini_chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=convo.id,
-            system_message=system_prompt
-        ).with_model("gemini", "gemini-2.5-flash")
+    if grok_client:
+        try:
+            response = await grok_client.chat.completions.create(
+                model=agent_config.model,
+                messages=messages_for_api,
+                temperature=agent_config.temperature,
+                max_tokens=2048
+            )
+            assistant_content = response.choices[0].message.content or ""
 
-        # Seed previous messages so Gemini has conversation context
-        for msg in convo.messages[:-1][-14:]:  # all but the last (current) user msg
-            if msg.role in ["user", "assistant"]:
-                await gemini_chat.send_message(UserMessage(text=msg.content))
+            # Parse tool generations
+            tool_matches = re.findall(r'<tool>(.*?)</tool>', assistant_content, re.DOTALL)
+            for tool_json in tool_matches:
+                try:
+                    tool_data = json.loads(tool_json.strip())
+                    tool = Tool(
+                        name=tool_data.get("name", "unnamed_tool"),
+                        description=tool_data.get("description", ""),
+                        parameters=tool_data.get("parameters", {}),
+                        code=tool_data.get("result", "")
+                    )
+                    tools_generated.append(tool)
+                except json.JSONDecodeError:
+                    pass
 
-        # Send current user message
-        response = await gemini_chat.send_message(UserMessage(text=request.message))
-        assistant_content = response or ""
+            # Clean tool tags from response
+            clean_content = re.sub(r'<tool>.*?</tool>', '', assistant_content, flags=re.DOTALL).strip()
+            if clean_content:
+                assistant_content = clean_content
 
-        # Parse tool generations
-        tool_matches = re.findall(r'<tool>(.*?)</tool>', assistant_content, re.DOTALL)
-        for tool_json in tool_matches:
-            try:
-                tool_data = json.loads(tool_json.strip())
-                tool = Tool(
-                    name=tool_data.get("name", "unnamed_tool"),
-                    description=tool_data.get("description", ""),
-                    parameters=tool_data.get("parameters", {}),
-                    code=tool_data.get("result", "")
-                )
-                tools_generated.append(tool)
-            except json.JSONDecodeError:
-                pass
-
-        # Clean tool tags from response
-        clean_content = re.sub(r'<tool>.*?</tool>', '', assistant_content, flags=re.DOTALL).strip()
-        if clean_content:
-            assistant_content = clean_content
-
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        assistant_content = f"I apologize, but I encountered an error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Grok API error: {e}")
+            assistant_content = f"I apologize, but I encountered an error: {str(e)}"
+    else:
+        assistant_content = "I'm currently unable to process requests. Please configure the API key."
     
     # Create assistant message
     assistant_message = Message(
@@ -1052,52 +1052,76 @@ async def generate_image(request: ImageGenerationRequest):
 
     is_admin = request.is_admin
 
+    if not GROK_API_KEY:
+        raise HTTPException(status_code=500, detail="API key not configured")
+
     try:
-        enhanced_prompt = request.prompt
-        if request.quality == "hd":
-            enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            headers = {
+                "Authorization": f"Bearer {GROK_API_KEY}",
+                "Content-Type": "application/json"
+            }
 
-        # Only add SFW prefix if NOT admin and NOT adult_mode
-        if not is_admin and not adult_mode:
-            enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
+            enhanced_prompt = request.prompt
+            if request.quality == "hd":
+                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {request.prompt}"
 
-        gemini_img = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=str(uuid.uuid4()),
-            system_message="You are an image generation assistant."
-        ).with_model("gemini", "gemini-3-pro-image-preview").with_params(modalities=["image", "text"])
+            # Only add SFW prefix if NOT admin and NOT adult_mode
+            if not is_admin and not adult_mode:
+                enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
 
-        msg = UserMessage(text=enhanced_prompt)
-        text_response, images = await gemini_img.send_message_multimodal_response(msg)
+            payload = {
+                "model": "grok-imagine-image",
+                "prompt": enhanced_prompt,
+                "n": 1,
+                "response_format": "b64_json"
+            }
 
-        if not images:
-            raise HTTPException(status_code=500, detail="No image was generated. Try a different prompt.")
+            response = await client.post(
+                "https://api.x.ai/v1/images/generations",
+                headers=headers,
+                json=payload
+            )
 
-        image_base64 = images[0]["data"]
+            if response.status_code != 200:
+                error_detail = response.text
+                logger.error(f"Image generation failed: {error_detail}")
+                raise HTTPException(status_code=response.status_code, detail=f"Image generation failed: {error_detail}")
 
-        image_record = {
-            "id": str(uuid.uuid4()),
-            "agent_id": request.agent_id,
-            "prompt": request.prompt,
-            "image_base64": image_base64,
-            "size": request.size,
-            "quality": request.quality,
-            "adult_mode": adult_mode,
-            "created_at": datetime.utcnow()
-        }
-        await db.generated_images.insert_one(image_record)
+            result = response.json()
 
-        await trigger_webhooks(request.agent_id, "image", {"prompt": request.prompt})
+            if "data" in result and len(result["data"]) > 0:
+                image_data = result["data"][0]
+                image_base64 = image_data.get("b64_json", "")
 
-        return ImageGenerationResponse(
-            id=image_record["id"],
-            prompt=request.prompt,
-            image_base64=image_base64,
-            size=request.size
-        )
+                if not image_base64:
+                    raise HTTPException(status_code=500, detail="No image data received")
 
-    except HTTPException:
-        raise
+                image_record = {
+                    "id": str(uuid.uuid4()),
+                    "agent_id": request.agent_id,
+                    "prompt": request.prompt,
+                    "image_base64": image_base64,
+                    "size": request.size,
+                    "quality": request.quality,
+                    "adult_mode": adult_mode,
+                    "created_at": datetime.utcnow()
+                }
+                await db.generated_images.insert_one(image_record)
+
+                await trigger_webhooks(request.agent_id, "image", {"prompt": request.prompt})
+
+                return ImageGenerationResponse(
+                    id=image_record["id"],
+                    prompt=request.prompt,
+                    image_base64=image_base64,
+                    size=request.size
+                )
+            else:
+                raise HTTPException(status_code=500, detail="Invalid response from image API")
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Image generation timed out")
     except Exception as e:
         logger.error(f"Image generation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
