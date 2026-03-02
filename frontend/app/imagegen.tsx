@@ -69,6 +69,7 @@ interface Agent {
 
 export default function ImageGenScreen() {
   const router = useRouter();
+  const { isAdmin } = useAuth();
   const [prompt, setPrompt] = useState('');
   const [selectedSize, setSelectedSize] = useState('1024x1024');
   const [selectedStyle, setSelectedStyle] = useState('');
@@ -76,6 +77,8 @@ export default function ImageGenScreen() {
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [agent, setAgent] = useState<Agent | null>(null);
   const [previewImage, setPreviewImage] = useState<GeneratedImage | null>(null);
+  const [bypassFilters, setBypassFilters] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   useEffect(() => {
     loadData();
