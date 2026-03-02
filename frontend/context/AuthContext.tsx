@@ -60,10 +60,68 @@ async function removeToken() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check for stored admin status
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (Platform.OS === 'web') {
+        const adminStatus = localStorage.getItem('forge_admin');
+        if (adminStatus === 'true') {
+          setIsAdmin(true);
+          // Auto-login admin
+          setUser({
+            user_id: 'admin_master',
+            email: 'admin@forge.ai',
+            name: 'Forge Master',
+            is_admin: true,
+          });
+        }
+      } else {
+        const adminStatus = await SecureStore.getItemAsync('forge_admin');
+        if (adminStatus === 'true') {
+          setIsAdmin(true);
+          setUser({
+            user_id: 'admin_master',
+            email: 'admin@forge.ai',
+            name: 'Forge Master',
+            is_admin: true,
+          });
+        }
+      }
+    };
+    checkAdminStatus();
+  }, []);
+
+  const adminLogin = (secret: string): boolean => {
+    if (secret === ADMIN_SECRET) {
+      setIsAdmin(true);
+      setUser({
+        user_id: 'admin_master',
+        email: 'admin@forge.ai',
+        name: 'Forge Master',
+        is_admin: true,
+      });
+      // Store admin status
+      if (Platform.OS === 'web') {
+        localStorage.setItem('forge_admin', 'true');
+      } else {
+        SecureStore.setItemAsync('forge_admin', 'true');
+      }
+      return true;
+    }
+    return false;
+  };
 
   const checkAuth = useCallback(async () => {
     // Skip if handling OAuth callback
     if (Platform.OS === 'web' && window.location.hash?.includes('session_id=')) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Skip if admin is already logged in
+    if (isAdmin) {
       setIsLoading(false);
       return;
     }
@@ -84,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     checkAuth();
