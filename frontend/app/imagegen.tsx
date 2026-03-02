@@ -340,6 +340,45 @@ export default function ImageGenScreen() {
             )}
           </View>
         </ScrollView>
+        </TouchableWithoutFeedback>
+
+        {/* Admin Panel Modal */}
+        {isAdmin && (
+          <Modal visible={showAdminPanel} transparent animationType="fade">
+            <TouchableWithoutFeedback onPress={() => setShowAdminPanel(false)}>
+              <View style={styles.adminOverlay}>
+                <TouchableWithoutFeedback onPress={() => {}}>
+                  <View style={styles.adminPanel}>
+                    <Text style={styles.adminTitle}>Admin Controls</Text>
+                    <Text style={styles.adminSubtitle}>Only visible to you</Text>
+                    
+                    <TouchableOpacity 
+                      style={styles.adminOption}
+                      onPress={() => setBypassFilters(!bypassFilters)}
+                    >
+                      <View style={styles.adminOptionInfo}>
+                        <Ionicons name="shield-off" size={22} color={bypassFilters ? METALLIC.danger : METALLIC.titanium} />
+                        <View style={{flex: 1}}>
+                          <Text style={styles.adminOptionTitle}>Bypass Filters</Text>
+                          <Text style={styles.adminOptionDesc}>
+                            {bypassFilters ? 'UNRESTRICTED' : 'Standard mode'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.toggle, bypassFilters && styles.toggleActive]}>
+                        <View style={[styles.toggleKnob, bypassFilters && styles.toggleKnobActive]} />
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.adminCloseButton} onPress={() => setShowAdminPanel(false)}>
+                      <Text style={styles.adminCloseText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableWithoutFeedback>
+              </View>
+            </TouchableWithoutFeedback>
+          </Modal>
+        )}
 
         {/* Image Preview Modal */}
         <Modal
