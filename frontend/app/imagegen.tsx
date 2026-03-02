@@ -249,7 +249,7 @@ export default function ImageGenScreen() {
             <Text style={styles.sectionTitle}>Prompt</Text>
             <View style={styles.promptContainer}>
               <TextInput
-                style={styles.promptInput}
+                style={[styles.promptInput, { flex: 1 }]}
                 value={prompt}
                 onChangeText={setPrompt}
                 placeholder="Describe the image you want to generate..."
@@ -257,6 +257,8 @@ export default function ImageGenScreen() {
                 multiline
                 numberOfLines={4}
                 textAlignVertical="top"
+                editable={true}
+                selectTextOnFocus={true}
               />
             </View>
           </View>

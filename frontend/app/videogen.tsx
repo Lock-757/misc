@@ -247,13 +247,15 @@ export default function VideoGenScreen() {
               <Text style={styles.sectionTitle}>Describe Your Video</Text>
               <View style={styles.promptContainer}>
                 <TextInput
-                  style={styles.promptInput}
+                  style={[styles.promptInput, { flex: 1 }]}
                   placeholder="A cat playing piano in a jazz club..."
                   placeholderTextColor={C.muted}
                   value={prompt}
                   onChangeText={setPrompt}
                   multiline
                   maxLength={500}
+                  editable={true}
+                  selectTextOnFocus={true}
                   data-testid="video-prompt-input"
                 />
                 <Text style={styles.charCount}>{prompt.length}/500</Text>
