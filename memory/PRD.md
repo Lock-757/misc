@@ -9,7 +9,7 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 
 ## Core Requirements
 - **Chat Interface**: Intelligent agent chat with streaming responses
-- **LLM**: Grok as primary (Claude, Kimi as future integrations)
+- **LLM**: Gemini 2.5 Flash (via Emergent integrations) for chat; Grok kept for image generation
 - **Auth**: Email/password + Google OAuth, JWT sessions, user-specific data isolation
 - **Admin Role**: Master password bypass (`forge_master_2025`), no content filters, no "18+" badge
 - **Image Generation**: HD images via Grok (`grok-imagine-image`)

@@ -26,12 +26,16 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Grok API setup
+# Grok API setup (kept for image generation)
 GROK_API_KEY = os.environ.get('GROK_API_KEY', '')
 grok_client = AsyncOpenAI(
     api_key=GROK_API_KEY,
     base_url="https://api.x.ai/v1"
 ) if GROK_API_KEY else None
+
+# Gemini setup via Emergent integrations
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
 # Create the main app
 app = FastAPI()
@@ -971,45 +975,49 @@ async def chat(request: ChatRequest):
         if msg.role in ["user", "assistant"]:
             messages_for_api.append({"role": msg.role, "content": msg.content})
     
-    # Call Grok API
+    # Call Gemini via Emergent integrations
     tools_generated = []
     assistant_content = ""
-    
-    if grok_client:
-        try:
-            response = await grok_client.chat.completions.create(
-                model=agent_config.model,
-                messages=messages_for_api,
-                temperature=agent_config.temperature,
-                max_tokens=2048
-            )
-            assistant_content = response.choices[0].message.content or ""
-            
-            # Parse tool generations
-            tool_matches = re.findall(r'<tool>(.*?)</tool>', assistant_content, re.DOTALL)
-            for tool_json in tool_matches:
-                try:
-                    tool_data = json.loads(tool_json.strip())
-                    tool = Tool(
-                        name=tool_data.get("name", "unnamed_tool"),
-                        description=tool_data.get("description", ""),
-                        parameters=tool_data.get("parameters", {}),
-                        code=tool_data.get("result", "")
-                    )
-                    tools_generated.append(tool)
-                except json.JSONDecodeError:
-                    pass
-            
-            # Clean tool tags from response
-            clean_content = re.sub(r'<tool>.*?</tool>', '', assistant_content, flags=re.DOTALL).strip()
-            if clean_content:
-                assistant_content = clean_content
-                
-        except Exception as e:
-            logger.error(f"Grok API error: {e}")
-            assistant_content = f"I apologize, but I encountered an error: {str(e)}"
-    else:
-        assistant_content = "I'm currently unable to process requests. Please configure the API key."
+
+    try:
+        gemini_chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=convo.id,
+            system_message=system_prompt
+        ).with_model("gemini", "gemini-2.5-flash")
+
+        # Seed previous messages so Gemini has conversation context
+        for msg in convo.messages[:-1][-14:]:  # all but the last (current) user msg
+            if msg.role in ["user", "assistant"]:
+                await gemini_chat.send_message(UserMessage(text=msg.content))
+
+        # Send current user message
+        response = await gemini_chat.send_message(UserMessage(text=request.message))
+        assistant_content = response or ""
+
+        # Parse tool generations
+        tool_matches = re.findall(r'<tool>(.*?)</tool>', assistant_content, re.DOTALL)
+        for tool_json in tool_matches:
+            try:
+                tool_data = json.loads(tool_json.strip())
+                tool = Tool(
+                    name=tool_data.get("name", "unnamed_tool"),
+                    description=tool_data.get("description", ""),
+                    parameters=tool_data.get("parameters", {}),
+                    code=tool_data.get("result", "")
+                )
+                tools_generated.append(tool)
+            except json.JSONDecodeError:
+                pass
+
+        # Clean tool tags from response
+        clean_content = re.sub(r'<tool>.*?</tool>', '', assistant_content, flags=re.DOTALL).strip()
+        if clean_content:
+            assistant_content = clean_content
+
+    except Exception as e:
+        logger.error(f"Gemini API error: {e}")
+        assistant_content = f"I apologize, but I encountered an error: {str(e)}"
     
     # Create assistant message
     assistant_message = Message(
