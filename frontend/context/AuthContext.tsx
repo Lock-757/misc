@@ -5,23 +5,29 @@ import { Platform } from 'react-native';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
+// Admin secret - only you know this
+const ADMIN_SECRET = 'forge_master_2025';
+
 interface User {
   user_id: string;
   email: string;
   name: string;
   picture?: string;
+  is_admin?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   loginWithGoogle: () => void;
   handleGoogleCallback: (sessionId: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  adminLogin: (secret: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
