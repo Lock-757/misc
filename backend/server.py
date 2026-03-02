@@ -270,6 +270,7 @@ class ImageGenerationRequest(BaseModel):
     prompt: str
     size: str = "1024x1024"
     quality: str = "hd"
+    is_admin: bool = False  # Admin bypass all filters
 
 class ImageGenerationResponse(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
