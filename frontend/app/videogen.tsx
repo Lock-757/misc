@@ -83,9 +83,18 @@ export default function VideoGenScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadVideos();
-    }
+    // Load videos for both regular auth and admin users
+    const checkAndLoadVideos = async () => {
+      const token = await getStoredToken();
+      const isAdminLoggedIn = Platform.OS === 'web' 
+        ? localStorage.getItem('forge_admin') === 'true'
+        : false;
+      
+      if (token || isAdminLoggedIn) {
+        loadVideos();
+      }
+    };
+    checkAndLoadVideos();
   }, [isAuthenticated]);
 
   // Progress simulation during generation
@@ -111,21 +120,27 @@ export default function VideoGenScreen() {
       const headers: any = {};
       
       // Check for admin login
-      if (!token) {
-        const isAdminLoggedIn = Platform.OS === 'web' 
-          ? localStorage.getItem('forge_admin') === 'true'
-          : false;
-        
-        if (isAdminLoggedIn) {
-          headers['X-Admin-Key'] = ADMIN_SECRET;
-        } else {
-          return; // Not logged in
-        }
-      } else {
+      const isAdminLoggedIn = Platform.OS === 'web' 
+        ? localStorage.getItem('forge_admin') === 'true'
+        : false;
+      
+      console.log('loadVideos - token:', token ? 'exists' : 'null', 'isAdmin:', isAdminLoggedIn);
+      
+      if (!token && !isAdminLoggedIn) {
+        console.log('loadVideos - not authenticated, skipping');
+        return;
+      }
+      
+      if (isAdminLoggedIn) {
+        headers['X-Admin-Key'] = ADMIN_SECRET;
+      }
+      if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
+      console.log('loadVideos - calling API with headers:', Object.keys(headers));
       const res = await axios.get(`${API_URL}/api/generated-videos`, { headers });
+      console.log('loadVideos - response:', res.data?.length, 'videos');
       setGeneratedVideos(res.data || []);
     } catch (error) {
       console.log('Error loading videos:', error);
