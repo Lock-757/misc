@@ -1455,8 +1455,13 @@ class VideoGenerationResponse(BaseModel):
 
 @api_router.post("/generate-video", response_model=VideoGenerationResponse)
 async def generate_video(request: Request, vid_request: VideoGenerationRequest, session_token: Optional[str] = Cookie(None)):
-    user = await get_current_user(request, session_token)
-    user_id = user["user_id"] if user else "anonymous"
+    # Check for admin key first
+    admin_key = request.headers.get("X-Admin-Key")
+    if admin_key == ADMIN_SECRET:
+        user_id = "admin_master"
+    else:
+        user = await get_current_user(request, session_token)
+        user_id = user["user_id"] if user else "anonymous"
 
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")

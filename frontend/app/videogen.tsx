@@ -24,6 +24,7 @@ import { useAuth, getStoredToken } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+const ADMIN_SECRET = 'forge_master_2025';
 
 const C = {
   bg: '#0A0A0F',
@@ -128,7 +129,21 @@ export default function VideoGenScreen() {
     setIsGenerating(true);
 
     try {
-      const token = await getStoredToken();
+      // Check for regular token first
+      let token = await getStoredToken();
+      
+      // If no token, check if admin is logged in
+      if (!token) {
+        const isAdminLoggedIn = Platform.OS === 'web' 
+          ? localStorage.getItem('forge_admin') === 'true'
+          : false;
+        
+        if (isAdminLoggedIn) {
+          // Use admin secret as auth header for admin users
+          token = ADMIN_SECRET;
+        }
+      }
+      
       if (!token) {
         setErrorMessage('Please log in to generate videos');
         setIsGenerating(false);
@@ -145,7 +160,10 @@ export default function VideoGenScreen() {
           model: selectedModel,
         },
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'X-Admin-Key': token === ADMIN_SECRET ? ADMIN_SECRET : ''
+          },
           timeout: 700000, // 11+ minutes for video generation
         }
       );
