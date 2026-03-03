@@ -237,6 +237,34 @@ export default function VideoGenScreen() {
   };
 
   const deleteVideo = async (videoId: string) => {
+    // For web, use confirm instead of Alert
+    if (Platform.OS === 'web') {
+      if (!window.confirm('Are you sure you want to delete this video?')) {
+        return;
+      }
+      
+      try {
+        const headers: any = {};
+        const token = await getStoredToken();
+        const isAdminLoggedIn = localStorage.getItem('forge_admin') === 'true';
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        if (isAdminLoggedIn) {
+          headers['X-Admin-Key'] = ADMIN_SECRET;
+        }
+        
+        await axios.delete(`${API_URL}/api/generated-videos/${videoId}`, { headers });
+        setGeneratedVideos(prev => prev.filter(v => v.id !== videoId));
+        setPreviewVideo(null);
+      } catch (error) {
+        window.alert('Failed to delete video');
+      }
+      return;
+    }
+    
+    // Native alert for mobile
     Alert.alert('Delete Video', 'Are you sure you want to delete this video?', [
       { text: 'Cancel', style: 'cancel' },
       {

@@ -1552,10 +1552,21 @@ async def get_generated_videos(request: Request, limit: int = 20, session_token:
     return videos
 
 @api_router.delete("/generated-videos/{video_id}")
-async def delete_generated_video(video_id: str):
-    result = await db.generated_videos.delete_one({"id": video_id})
+async def delete_generated_video(request: Request, video_id: str, session_token: Optional[str] = Cookie(None)):
+    # Check for admin key first
+    admin_key = request.headers.get("X-Admin-Key")
+    if admin_key == ADMIN_SECRET:
+        user_id = "admin_master"
+    else:
+        user = await get_current_user(request, session_token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        user_id = user["user_id"]
+    
+    # Only delete if the video belongs to this user
+    result = await db.generated_videos.delete_one({"id": video_id, "user_id": user_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Video not found")
+        raise HTTPException(status_code=404, detail="Video not found or not authorized")
     return {"message": "Video deleted"}
 
 # ==================== UI CONFIG ENDPOINTS ====================
