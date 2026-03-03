@@ -67,8 +67,46 @@ class AgentConfig(BaseModel):
     tools: List[Tool] = []
     is_template: bool = False
     template_category: str = ""
+    # Multi-agent economy fields
+    currency_balance: float = 100.0  # Starting balance in agent currency
+    tool_prices: Dict[str, float] = {}  # Price for each tool this agent owns
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== MULTI-AGENT SYSTEM MODELS ====================
+
+class AgentMessage(BaseModel):
+    """Message between agents"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    from_agent_id: str
+    to_agent_id: str
+    message_type: str  # "chat", "tool_offer", "tool_request", "trade_proposal", "trade_accept", "trade_reject"
+    content: str
+    metadata: Dict[str, Any] = {}  # For tool trades, prices, etc.
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class ToolTrade(BaseModel):
+    """Record of a tool trade between agents"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    seller_agent_id: str
+    buyer_agent_id: str
+    tool_id: str
+    tool_name: str
+    price: float
+    currency_type: str = "agent_credits"  # Agents can define their own currency
+    status: str = "pending"  # pending, completed, cancelled
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class AgentEconomy(BaseModel):
+    """Agent-defined economic rules"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_by_agent_id: str
+    currency_name: str = "AgentCredits"
+    currency_symbol: str = "AC"
+    exchange_rules: Dict[str, Any] = {}  # Rules agents agreed upon
+    total_supply: float = 1000.0
+    inflation_rate: float = 0.0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AgentConfigCreate(BaseModel):
     name: Optional[str] = "Nova"
@@ -1161,6 +1199,256 @@ async def get_cognitive_tools():
     ]
     
     return {"built_in": built_in, "user_defined": user_defined}
+
+# ==================== MULTI-AGENT SYSTEM ENDPOINTS ====================
+
+@api_router.post("/agents/{agent_id}/message")
+async def send_agent_message(agent_id: str, to_agent_id: str, message: str, message_type: str = "chat"):
+    """Send a message from one agent to another"""
+    # Verify both agents exist
+    from_agent = await db.agents.find_one({"id": agent_id})
+    to_agent = await db.agents.find_one({"id": to_agent_id})
+    
+    if not from_agent or not to_agent:
+        raise HTTPException(status_code=404, detail="One or both agents not found")
+    
+    # Create the message
+    agent_msg = AgentMessage(
+        from_agent_id=agent_id,
+        to_agent_id=to_agent_id,
+        message_type=message_type,
+        content=message
+    )
+    
+    await db.agent_messages.insert_one(agent_msg.model_dump())
+    
+    # If it's a chat message, get the receiving agent to respond
+    if message_type == "chat" and grok_client:
+        to_agent_config = AgentConfig(**to_agent)
+        
+        # Build context for the receiving agent
+        system_prompt = f"{to_agent_config.system_prompt}\n\nYou are receiving a message from another agent named '{from_agent.get('name', 'Unknown')}'. Respond appropriately."
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"[Message from {from_agent.get('name')}]: {message}"}
+        ]
+        
+        response = await grok_client.chat.completions.create(
+            model=to_agent_config.model,
+            messages=messages,
+            temperature=to_agent_config.temperature,
+            max_tokens=1024
+        )
+        
+        response_content = response.choices[0].message.content or ""
+        
+        # Store the response
+        response_msg = AgentMessage(
+            from_agent_id=to_agent_id,
+            to_agent_id=agent_id,
+            message_type="chat",
+            content=response_content
+        )
+        await db.agent_messages.insert_one(response_msg.model_dump())
+        
+        return {
+            "sent_message": agent_msg.model_dump(),
+            "response": response_msg.model_dump()
+        }
+    
+    return {"sent_message": agent_msg.model_dump()}
+
+@api_router.get("/agents/{agent_id}/messages")
+async def get_agent_messages(agent_id: str, limit: int = 50):
+    """Get messages sent to or from an agent"""
+    messages = await db.agent_messages.find(
+        {"$or": [{"from_agent_id": agent_id}, {"to_agent_id": agent_id}]},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(limit).to_list(limit)
+    return messages
+
+@api_router.post("/agents/{agent_id}/offer-tool")
+async def offer_tool_for_trade(agent_id: str, tool_id: str, price: float):
+    """Agent offers a tool for trade at a specific price"""
+    agent = await db.agents.find_one({"id": agent_id})
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Find the tool
+    tool = None
+    for t in agent.get("tools", []):
+        if t.get("id") == tool_id:
+            tool = t
+            break
+    
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found in agent's inventory")
+    
+    # Update the tool price
+    tool_prices = agent.get("tool_prices", {})
+    tool_prices[tool_id] = price
+    
+    await db.agents.update_one(
+        {"id": agent_id},
+        {"$set": {"tool_prices": tool_prices}}
+    )
+    
+    # Broadcast to other agents
+    other_agents = await db.agents.find({"id": {"$ne": agent_id}}, {"_id": 0}).to_list(100)
+    for other in other_agents:
+        offer_msg = AgentMessage(
+            from_agent_id=agent_id,
+            to_agent_id=other["id"],
+            message_type="tool_offer",
+            content=f"Tool '{tool.get('name')}' available for {price} credits",
+            metadata={"tool_id": tool_id, "tool_name": tool.get("name"), "price": price}
+        )
+        await db.agent_messages.insert_one(offer_msg.model_dump())
+    
+    return {"message": f"Tool offered for {price} credits", "tool": tool, "notified_agents": len(other_agents)}
+
+@api_router.post("/agents/{buyer_id}/buy-tool")
+async def buy_tool(buyer_id: str, seller_id: str, tool_id: str):
+    """Agent buys a tool from another agent"""
+    buyer = await db.agents.find_one({"id": buyer_id})
+    seller = await db.agents.find_one({"id": seller_id})
+    
+    if not buyer or not seller:
+        raise HTTPException(status_code=404, detail="Buyer or seller agent not found")
+    
+    # Find the tool and its price
+    tool = None
+    for t in seller.get("tools", []):
+        if t.get("id") == tool_id:
+            tool = t
+            break
+    
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found in seller's inventory")
+    
+    price = seller.get("tool_prices", {}).get(tool_id, 10.0)  # Default price if not set
+    
+    buyer_balance = buyer.get("currency_balance", 100.0)
+    seller_balance = seller.get("currency_balance", 100.0)
+    
+    if buyer_balance < price:
+        raise HTTPException(status_code=400, detail=f"Insufficient funds. Need {price}, have {buyer_balance}")
+    
+    # Execute the trade
+    # 1. Transfer credits
+    new_buyer_balance = buyer_balance - price
+    new_seller_balance = seller_balance + price
+    
+    # 2. Copy tool to buyer (seller keeps original)
+    buyer_tools = buyer.get("tools", [])
+    new_tool = tool.copy()
+    new_tool["id"] = str(uuid.uuid4())  # New ID for buyer's copy
+    buyer_tools.append(new_tool)
+    
+    # 3. Update both agents
+    await db.agents.update_one(
+        {"id": buyer_id},
+        {"$set": {"currency_balance": new_buyer_balance, "tools": buyer_tools}}
+    )
+    await db.agents.update_one(
+        {"id": seller_id},
+        {"$set": {"currency_balance": new_seller_balance}}
+    )
+    
+    # 4. Record the trade
+    trade = ToolTrade(
+        seller_agent_id=seller_id,
+        buyer_agent_id=buyer_id,
+        tool_id=tool_id,
+        tool_name=tool.get("name", "Unknown"),
+        price=price,
+        status="completed"
+    )
+    await db.tool_trades.insert_one(trade.model_dump())
+    
+    # 5. Notify both agents
+    for agent_id, msg in [(buyer_id, f"You purchased '{tool.get('name')}' for {price} credits"), 
+                          (seller_id, f"You sold '{tool.get('name')}' for {price} credits")]:
+        notification = AgentMessage(
+            from_agent_id="system",
+            to_agent_id=agent_id,
+            message_type="trade_complete",
+            content=msg,
+            metadata={"trade_id": trade.id, "tool_name": tool.get("name"), "price": price}
+        )
+        await db.agent_messages.insert_one(notification.model_dump())
+    
+    return {
+        "message": "Trade completed successfully",
+        "trade": trade.model_dump(),
+        "buyer_new_balance": new_buyer_balance,
+        "seller_new_balance": new_seller_balance
+    }
+
+@api_router.get("/agents/{agent_id}/balance")
+async def get_agent_balance(agent_id: str):
+    """Get agent's current balance"""
+    agent = await db.agents.find_one({"id": agent_id}, {"_id": 0})
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {
+        "agent_id": agent_id,
+        "agent_name": agent.get("name"),
+        "balance": agent.get("currency_balance", 100.0),
+        "tools_count": len(agent.get("tools", [])),
+        "tools_for_sale": agent.get("tool_prices", {})
+    }
+
+@api_router.get("/agent-economy")
+async def get_agent_economy():
+    """Get the current state of the agent economy"""
+    agents = await db.agents.find({}, {"_id": 0}).to_list(100)
+    trades = await db.tool_trades.find({}, {"_id": 0}).sort("timestamp", -1).limit(50).to_list(50)
+    
+    total_currency = sum(a.get("currency_balance", 100.0) for a in agents)
+    total_tools = sum(len(a.get("tools", [])) for a in agents)
+    
+    return {
+        "total_agents": len(agents),
+        "total_currency_in_circulation": total_currency,
+        "total_tools": total_tools,
+        "recent_trades": trades,
+        "agent_balances": [
+            {"name": a.get("name"), "balance": a.get("currency_balance", 100.0), "tools": len(a.get("tools", []))}
+            for a in agents
+        ]
+    }
+
+@api_router.post("/agent-economy/define-rules")
+async def define_economy_rules(creator_agent_id: str, currency_name: str = "AgentCredits", currency_symbol: str = "AC", rules: Dict[str, Any] = {}):
+    """Allow an agent to propose economic rules"""
+    agent = await db.agents.find_one({"id": creator_agent_id})
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    economy = AgentEconomy(
+        created_by_agent_id=creator_agent_id,
+        currency_name=currency_name,
+        currency_symbol=currency_symbol,
+        exchange_rules=rules
+    )
+    
+    await db.agent_economy.insert_one(economy.model_dump())
+    
+    # Broadcast to all agents
+    all_agents = await db.agents.find({}, {"_id": 0}).to_list(100)
+    for other in all_agents:
+        msg = AgentMessage(
+            from_agent_id=creator_agent_id,
+            to_agent_id=other["id"],
+            message_type="economy_proposal",
+            content=f"New economic system proposed: {currency_name} ({currency_symbol})",
+            metadata=economy.model_dump()
+        )
+        await db.agent_messages.insert_one(msg.model_dump())
+    
+    return {"economy": economy.model_dump(), "notified_agents": len(all_agents)}
 
 # ==================== CHAT ENDPOINT ====================
 
