@@ -83,6 +83,11 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - Dynamic rotating prompt suggestions
 - Content Filter hidden in Settings > Advanced
 
+### Session 5 (2026-03-03) — Agent Dashboard Enhancement
+- **Agent Profile Tabs**: Added Activity, Goals, and Reputation tabs to agent detail view
+- **Data Display**: Dashboard now fetches and displays Journal entries, Goals (with progress bars), Reputation scores, and Specializations for each agent
+- **Backend endpoints verified**: `/api/agents/{id}/journal`, `/api/agents/{id}/goals`, `/api/agents/{id}/reputation`, `/api/agents/{id}/specializations`
+
 ### Session 4 (2026-03-02) — HD Video Generation & Cognitive Tools System
 - **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
   - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
