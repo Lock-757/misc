@@ -132,6 +132,7 @@ export default function VideoGenScreen() {
         return;
       }
 
+      console.log('Starting video generation...');
       const response = await axios.post(
         `${API_URL}/api/generate-video`,
         {
@@ -422,6 +423,22 @@ export default function VideoGenScreen() {
             )}
         </ScrollView>
 
+        {/* Full Screen Loading Overlay */}
+        {isGenerating && (
+          <View style={styles.loadingOverlay}>
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color={C.accent} />
+              <Text style={styles.loadingTitle}>Generating Your Video</Text>
+              <Text style={styles.loadingPercent}>{Math.round(progress)}%</Text>
+              <View style={styles.loadingProgressContainer}>
+                <View style={[styles.loadingProgressBar, { width: `${progress}%` }]} />
+              </View>
+              <Text style={styles.loadingHint}>This typically takes 2-5 minutes</Text>
+              <Text style={styles.loadingSubHint}>Please don't close this page</Text>
+            </View>
+          </View>
+        )}
+
         {/* Video Preview Modal */}
         <Modal visible={!!previewVideo} animationType="fade" transparent>
           <View style={styles.modalOverlay}>
@@ -696,7 +713,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
-    gap: 8,
   },
   modalActionText: { fontSize: 14, fontWeight: '600' },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingCard: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.accent,
+    width: '85%',
+    maxWidth: 320,
+  },
+  loadingTitle: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  loadingPercent: {
+    color: C.accent,
+    fontSize: 36,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  loadingProgressContainer: {
+    width: '100%',
+    height: 8,
+    backgroundColor: C.gunmetal,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  loadingProgressBar: {
+    height: '100%',
+    backgroundColor: C.accent,
+    borderRadius: 4,
+  },
+  loadingHint: {
+    color: C.silver,
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  loadingSubHint: {
+    color: C.muted,
+    fontSize: 12,
+  },
 });
