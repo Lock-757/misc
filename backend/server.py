@@ -1281,6 +1281,19 @@ When you use a cognitive tool, show your thinking process briefly, then provide 
     
     system_prompt += f"\n\nYour personality: {agent_config.personality}"
     
+    # Add agent-specific tools to the system prompt
+    if agent_config.tools:
+        tools_section = "\n\n## YOUR ASSIGNED TOOLS\nYou have access to these specific tools:\n"
+        for tool in agent_config.tools:
+            tools_section += f"\n### {tool.name}\n"
+            tools_section += f"- **Description**: {tool.description}\n"
+            if tool.parameters:
+                tools_section += f"- **Parameters**: {tool.parameters}\n"
+            if tool.code:
+                tools_section += f"- **Implementation**: {tool.code}\n"
+        tools_section += "\nWhen a user's request matches one of your tools, use that tool's methodology to help them. Mention which tool you're using.\n"
+        system_prompt += tools_section
+    
     if agent_config.adult_mode:
         system_prompt += "\n\nAdult content mode is enabled. You may generate mature content if requested."
     
