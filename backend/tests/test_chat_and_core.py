@@ -22,7 +22,7 @@ if not BASE_URL:
                     BASE_URL = line.split('=', 1)[1].strip()
                     break
     except:
-        BASE_URL = 'https://ai-chat-hub-76.preview.emergentagent.com'
+        BASE_URL = 'https://multi-agent-hub-24.preview.emergentagent.com'
 
 ADMIN_KEY = 'forge_master_2025'
 ADMIN_HEADERS = {'X-Admin-Key': ADMIN_KEY}
