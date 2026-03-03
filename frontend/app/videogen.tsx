@@ -107,11 +107,25 @@ export default function VideoGenScreen() {
 
   const loadVideos = async () => {
     try {
-      const token = await getStoredToken();
-      if (!token) return;
-      const res = await axios.get(`${API_URL}/api/generated-videos`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      let token = await getStoredToken();
+      const headers: any = {};
+      
+      // Check for admin login
+      if (!token) {
+        const isAdminLoggedIn = Platform.OS === 'web' 
+          ? localStorage.getItem('forge_admin') === 'true'
+          : false;
+        
+        if (isAdminLoggedIn) {
+          headers['X-Admin-Key'] = ADMIN_SECRET;
+        } else {
+          return; // Not logged in
+        }
+      } else {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await axios.get(`${API_URL}/api/generated-videos`, { headers });
       setGeneratedVideos(res.data || []);
     } catch (error) {
       console.log('Error loading videos:', error);

@@ -1535,11 +1535,18 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
 
 @api_router.get("/generated-videos")
 async def get_generated_videos(request: Request, limit: int = 20, session_token: Optional[str] = Cookie(None)):
-    user = await get_current_user(request, session_token)
-    if not user:
-        return []
+    # Check for admin key first
+    admin_key = request.headers.get("X-Admin-Key")
+    if admin_key == ADMIN_SECRET:
+        user_id = "admin_master"
+    else:
+        user = await get_current_user(request, session_token)
+        if not user:
+            return []
+        user_id = user["user_id"]
+    
     videos = await db.generated_videos.find(
-        {"user_id": user["user_id"]}, 
+        {"user_id": user_id}, 
         {"_id": 0}
     ).sort("created_at", -1).limit(limit).to_list(limit)
     return videos
