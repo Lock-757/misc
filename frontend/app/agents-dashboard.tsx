@@ -56,6 +56,24 @@ interface Message {
   timestamp: string;
 }
 
+interface Reputation {
+  reputation_score: number;
+  tools_created: number;
+  successful_trades: number;
+  collaborations: number;
+}
+
+interface Specialization {
+  domain: string;
+  expertise_level: number;
+}
+
+interface JournalEntry {
+  entry_type: string;
+  content: string;
+  timestamp: string;
+}
+
 export default function AgentsDashboard() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);

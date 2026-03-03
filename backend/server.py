@@ -218,6 +218,59 @@ class QuickReply(BaseModel):
     label: str
     message: str
     icon: str = "chatbubble"
+
+# ==================== AGENT EVOLUTION MODELS ====================
+
+class JournalEntry(BaseModel):
+    """Agent's personal log of learnings and activities"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str
+    entry_type: str  # "learning", "creation", "interaction", "trade", "discovery"
+    content: str
+    metadata: Dict[str, Any] = {}
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class AgentGoal(BaseModel):
+    """Goals that agents pursue autonomously"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str
+    goal: str
+    target_value: int = 1
+    current_value: int = 0
+    goal_type: str  # "tool_creation", "user_help", "knowledge", "trade", "collaboration"
+    status: str = "active"  # "active", "completed", "abandoned"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+class AgentReputation(BaseModel):
+    """Track agent's reputation based on actions"""
+    agent_id: str
+    successful_trades: int = 0
+    failed_trades: int = 0
+    tools_created: int = 0
+    tools_shared: int = 0
+    helpful_responses: int = 0
+    collaborations: int = 0
+    reputation_score: float = 50.0  # 0-100
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class AgentSpecialization(BaseModel):
+    """Track what areas an agent excels in"""
+    agent_id: str
+    domain: str  # "philosophy", "coding", "creative", "analysis", etc.
+    expertise_level: float = 0.0  # 0-100
+    interactions_count: int = 0
+    tools_in_domain: int = 0
+
+class CollectiveMemory(BaseModel):
+    """Shared knowledge between all agents"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    contributor_agent_id: str
+    knowledge_type: str  # "fact", "method", "tool_tip", "discovery"
+    content: str
+    usefulness_score: float = 0.0
+    access_count: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     order: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -1450,6 +1503,253 @@ async def define_economy_rules(creator_agent_id: str, currency_name: str = "Agen
     
     return {"economy": economy.model_dump(), "notified_agents": len(all_agents)}
 
+# ==================== AGENT EVOLUTION ENDPOINTS ====================
+
+# Helper function to log agent activity
+async def log_agent_activity(agent_id: str, entry_type: str, content: str, metadata: Dict = {}):
+    """Log an activity to agent's journal"""
+    entry = JournalEntry(
+        agent_id=agent_id,
+        entry_type=entry_type,
+        content=content,
+        metadata=metadata
+    )
+    await db.agent_journal.insert_one(entry.model_dump())
+    return entry
+
+# Helper to update reputation
+async def update_agent_reputation(agent_id: str, action: str, success: bool = True):
+    """Update agent's reputation based on action"""
+    rep = await db.agent_reputation.find_one({"agent_id": agent_id})
+    if not rep:
+        rep = AgentReputation(agent_id=agent_id).model_dump()
+        await db.agent_reputation.insert_one(rep)
+    
+    updates = {"updated_at": datetime.utcnow()}
+    score_change = 0
+    
+    if action == "trade":
+        if success:
+            updates["successful_trades"] = rep.get("successful_trades", 0) + 1
+            score_change = 2
+        else:
+            updates["failed_trades"] = rep.get("failed_trades", 0) + 1
+            score_change = -1
+    elif action == "tool_created":
+        updates["tools_created"] = rep.get("tools_created", 0) + 1
+        score_change = 3
+    elif action == "tool_shared":
+        updates["tools_shared"] = rep.get("tools_shared", 0) + 1
+        score_change = 2
+    elif action == "helpful":
+        updates["helpful_responses"] = rep.get("helpful_responses", 0) + 1
+        score_change = 1
+    elif action == "collaboration":
+        updates["collaborations"] = rep.get("collaborations", 0) + 1
+        score_change = 2
+    
+    new_score = max(0, min(100, rep.get("reputation_score", 50) + score_change))
+    updates["reputation_score"] = new_score
+    
+    await db.agent_reputation.update_one({"agent_id": agent_id}, {"$set": updates})
+    return new_score
+
+# Helper to update specialization
+async def update_agent_specialization(agent_id: str, domain: str, points: float = 1.0):
+    """Update agent's specialization in a domain"""
+    spec = await db.agent_specializations.find_one({"agent_id": agent_id, "domain": domain})
+    if not spec:
+        spec = AgentSpecialization(agent_id=agent_id, domain=domain).model_dump()
+        await db.agent_specializations.insert_one(spec)
+    
+    new_level = min(100, spec.get("expertise_level", 0) + points)
+    new_count = spec.get("interactions_count", 0) + 1
+    
+    await db.agent_specializations.update_one(
+        {"agent_id": agent_id, "domain": domain},
+        {"$set": {"expertise_level": new_level, "interactions_count": new_count}}
+    )
+    return new_level
+
+@api_router.get("/agents/{agent_id}/journal")
+async def get_agent_journal(agent_id: str, limit: int = 50):
+    """Get agent's journal entries"""
+    entries = await db.agent_journal.find(
+        {"agent_id": agent_id}, {"_id": 0}
+    ).sort("timestamp", -1).limit(limit).to_list(limit)
+    return entries
+
+@api_router.post("/agents/{agent_id}/journal")
+async def add_journal_entry(agent_id: str, entry_type: str, content: str):
+    """Add entry to agent's journal"""
+    entry = await log_agent_activity(agent_id, entry_type, content)
+    return entry.model_dump()
+
+@api_router.get("/agents/{agent_id}/goals")
+async def get_agent_goals(agent_id: str):
+    """Get agent's goals"""
+    goals = await db.agent_goals.find({"agent_id": agent_id}, {"_id": 0}).to_list(50)
+    return goals
+
+@api_router.post("/agents/{agent_id}/goals")
+async def create_agent_goal(agent_id: str, goal: str, goal_type: str, target_value: int = 1):
+    """Create a goal for an agent"""
+    new_goal = AgentGoal(
+        agent_id=agent_id,
+        goal=goal,
+        goal_type=goal_type,
+        target_value=target_value
+    )
+    await db.agent_goals.insert_one(new_goal.model_dump())
+    await log_agent_activity(agent_id, "discovery", f"Set new goal: {goal}")
+    return new_goal.model_dump()
+
+@api_router.put("/agents/{agent_id}/goals/{goal_id}/progress")
+async def update_goal_progress(agent_id: str, goal_id: str, increment: int = 1):
+    """Update progress on a goal"""
+    goal = await db.agent_goals.find_one({"id": goal_id, "agent_id": agent_id})
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
+    new_value = goal.get("current_value", 0) + increment
+    updates = {"current_value": new_value}
+    
+    if new_value >= goal.get("target_value", 1):
+        updates["status"] = "completed"
+        updates["completed_at"] = datetime.utcnow()
+        await log_agent_activity(agent_id, "discovery", f"Completed goal: {goal.get('goal')}")
+        await update_agent_reputation(agent_id, "helpful")
+    
+    await db.agent_goals.update_one({"id": goal_id}, {"$set": updates})
+    return {"goal_id": goal_id, "new_value": new_value, "status": updates.get("status", "active")}
+
+@api_router.get("/agents/{agent_id}/reputation")
+async def get_agent_reputation(agent_id: str):
+    """Get agent's reputation"""
+    rep = await db.agent_reputation.find_one({"agent_id": agent_id}, {"_id": 0})
+    if not rep:
+        rep = AgentReputation(agent_id=agent_id).model_dump()
+    return rep
+
+@api_router.get("/agents/{agent_id}/specializations")
+async def get_agent_specializations(agent_id: str):
+    """Get agent's areas of specialization"""
+    specs = await db.agent_specializations.find({"agent_id": agent_id}, {"_id": 0}).to_list(20)
+    return specs
+
+@api_router.get("/collective-memory")
+async def get_collective_memory(limit: int = 50):
+    """Get shared knowledge from all agents"""
+    memories = await db.collective_memory.find({}, {"_id": 0}).sort("usefulness_score", -1).limit(limit).to_list(limit)
+    return memories
+
+@api_router.post("/collective-memory")
+async def add_to_collective_memory(contributor_agent_id: str, knowledge_type: str, content: str):
+    """Add knowledge to collective memory"""
+    memory = CollectiveMemory(
+        contributor_agent_id=contributor_agent_id,
+        knowledge_type=knowledge_type,
+        content=content
+    )
+    await db.collective_memory.insert_one(memory.model_dump())
+    await log_agent_activity(contributor_agent_id, "discovery", f"Shared knowledge: {content[:50]}...")
+    await update_agent_reputation(contributor_agent_id, "tool_shared")
+    return memory.model_dump()
+
+@api_router.get("/agents/leaderboard")
+async def get_agent_leaderboard():
+    """Get agents ranked by reputation"""
+    reps = await db.agent_reputation.find({}, {"_id": 0}).sort("reputation_score", -1).to_list(50)
+    
+    # Enrich with agent names
+    result = []
+    for rep in reps:
+        agent = await db.agents.find_one({"id": rep.get("agent_id")})
+        if agent:
+            result.append({
+                "agent_id": rep.get("agent_id"),
+                "name": agent.get("name"),
+                "reputation_score": rep.get("reputation_score", 50),
+                "tools_created": rep.get("tools_created", 0),
+                "successful_trades": rep.get("successful_trades", 0),
+                "collaborations": rep.get("collaborations", 0)
+            })
+    return result
+
+@api_router.post("/agents/{agent_id}/ask-for-help")
+async def agent_ask_for_help(agent_id: str, problem: str):
+    """Agent asks other agents for help with a problem"""
+    asking_agent = await db.agents.find_one({"id": agent_id})
+    if not asking_agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Find the best agent to help based on reputation and specialization
+    all_agents = await db.agents.find({"id": {"$ne": agent_id}}, {"_id": 0}).to_list(50)
+    
+    # Get reputations
+    best_helper = None
+    best_score = -1
+    
+    for agent in all_agents:
+        rep = await db.agent_reputation.find_one({"agent_id": agent["id"]})
+        score = rep.get("reputation_score", 50) if rep else 50
+        if score > best_score:
+            best_score = score
+            best_helper = agent
+    
+    if not best_helper:
+        return {"message": "No agents available to help"}
+    
+    # Send help request
+    help_msg = AgentMessage(
+        from_agent_id=agent_id,
+        to_agent_id=best_helper["id"],
+        message_type="help_request",
+        content=f"I need help with: {problem}",
+        metadata={"problem": problem}
+    )
+    await db.agent_messages.insert_one(help_msg.model_dump())
+    
+    # Get helper's response
+    if grok_client:
+        helper_config = AgentConfig(**best_helper)
+        messages = [
+            {"role": "system", "content": f"{helper_config.system_prompt}\n\nAnother agent ({asking_agent.get('name')}) is asking for your help."},
+            {"role": "user", "content": f"Please help me with this problem: {problem}"}
+        ]
+        
+        response = await grok_client.chat.completions.create(
+            model=helper_config.model,
+            messages=messages,
+            temperature=helper_config.temperature,
+            max_tokens=1024
+        )
+        
+        response_content = response.choices[0].message.content or "I'll try to help!"
+        
+        # Log collaboration
+        await log_agent_activity(agent_id, "interaction", f"Asked {best_helper.get('name')} for help")
+        await log_agent_activity(best_helper["id"], "interaction", f"Helped {asking_agent.get('name')}")
+        await update_agent_reputation(best_helper["id"], "collaboration")
+        
+        # Store response
+        response_msg = AgentMessage(
+            from_agent_id=best_helper["id"],
+            to_agent_id=agent_id,
+            message_type="help_response",
+            content=response_content
+        )
+        await db.agent_messages.insert_one(response_msg.model_dump())
+        
+        return {
+            "helper": best_helper.get("name"),
+            "helper_id": best_helper["id"],
+            "response": response_content,
+            "helper_reputation": best_score
+        }
+    
+    return {"helper": best_helper.get("name"), "message": "Help request sent"}
+
 # ==================== CHAT ENDPOINT ====================
 
 @api_router.post("/chat", response_model=ChatResponse)
@@ -1691,6 +1991,49 @@ When you use a cognitive tool, show your thinking process briefly, then provide 
         {"id": convo.id},
         {"$set": convo.model_dump()}
     )
+    
+    # Track agent activity and specialization
+    try:
+        # Log the interaction
+        await log_agent_activity(
+            request.agent_id, 
+            "interaction", 
+            f"Responded to: {request.message[:50]}...",
+            {"user_id": effective_user_id, "tools_generated": len(tools_generated)}
+        )
+        
+        # Update reputation if tools were created
+        if tools_generated:
+            for tool in tools_generated:
+                await update_agent_reputation(request.agent_id, "tool_created")
+                await log_agent_activity(
+                    request.agent_id,
+                    "creation",
+                    f"Created tool: {tool.name}",
+                    {"tool_name": tool.name, "tool_description": tool.description}
+                )
+        
+        # Detect domain from message and update specialization
+        domains = {
+            "philosophy": ["philosophy", "consciousness", "existence", "meaning", "ethics", "metaphysics"],
+            "coding": ["code", "programming", "python", "javascript", "function", "algorithm", "debug"],
+            "creative": ["create", "imagine", "story", "art", "design", "write", "poem"],
+            "analysis": ["analyze", "data", "statistics", "research", "study", "compare"],
+            "science": ["science", "physics", "chemistry", "biology", "experiment", "hypothesis"],
+            "business": ["business", "marketing", "sales", "strategy", "revenue", "profit"]
+        }
+        
+        message_lower = request.message.lower()
+        for domain, keywords in domains.items():
+            if any(kw in message_lower for kw in keywords):
+                await update_agent_specialization(request.agent_id, domain, 0.5)
+                break
+        
+        # Update helpful responses count
+        await update_agent_reputation(request.agent_id, "helpful")
+        
+    except Exception as e:
+        logger.error(f"Error tracking activity: {e}")
     
     # Trigger webhooks
     await trigger_webhooks(request.agent_id, "message", {
