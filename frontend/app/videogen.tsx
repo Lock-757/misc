@@ -81,6 +81,7 @@ export default function VideoGenScreen() {
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     // Load videos for both regular auth and admin users
@@ -239,9 +240,11 @@ export default function VideoGenScreen() {
   const deleteVideo = async (videoId: string) => {
     // For web, use confirm instead of Alert
     if (Platform.OS === 'web') {
-      if (!window.confirm('Are you sure you want to delete this video?')) {
+      if (!window.confirm('🗑️ Delete Video?\n\nThis action cannot be undone. Are you sure you want to delete this video?')) {
         return;
       }
+      
+      setIsDeleting(videoId);
       
       try {
         const headers: any = {};
@@ -258,8 +261,11 @@ export default function VideoGenScreen() {
         await axios.delete(`${API_URL}/api/generated-videos/${videoId}`, { headers });
         setGeneratedVideos(prev => prev.filter(v => v.id !== videoId));
         setPreviewVideo(null);
+        window.alert('✅ Video deleted successfully!');
       } catch (error) {
-        window.alert('Failed to delete video');
+        window.alert('❌ Failed to delete video. Please try again.');
+      } finally {
+        setIsDeleting(null);
       }
       return;
     }
@@ -271,6 +277,7 @@ export default function VideoGenScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          setIsDeleting(videoId);
           try {
             const token = await getStoredToken();
             await axios.delete(`${API_URL}/api/generated-videos/${videoId}`, {
@@ -278,8 +285,11 @@ export default function VideoGenScreen() {
             });
             setGeneratedVideos(prev => prev.filter(v => v.id !== videoId));
             setPreviewVideo(null);
+            Alert.alert('Success', 'Video deleted!');
           } catch (error) {
             Alert.alert('Error', 'Failed to delete video');
+          } finally {
+            setIsDeleting(null);
           }
         },
       },
@@ -490,9 +500,14 @@ export default function VideoGenScreen() {
                     <TouchableOpacity
                       style={styles.videoAction}
                       onPress={() => deleteVideo(video.id)}
+                      disabled={isDeleting === video.id}
                       data-testid={`video-delete-${video.id}`}
                     >
-                      <Ionicons name="trash-outline" size={20} color={C.danger} />
+                      {isDeleting === video.id ? (
+                        <ActivityIndicator size="small" color={C.danger} />
+                      ) : (
+                        <Ionicons name="trash-outline" size={20} color={C.danger} />
+                      )}
                     </TouchableOpacity>
                   </TouchableOpacity>
                 ))}

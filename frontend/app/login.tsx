@@ -59,17 +59,29 @@ export default function LoginScreen() {
     }
 
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      if (Platform.OS === 'web') {
+        window.alert('❌ Please fill in all fields');
+      } else {
+        Alert.alert('Error', 'Please fill in all fields');
+      }
       return;
     }
 
     if (isSignUp && !name.trim()) {
-      Alert.alert('Error', 'Please enter your name');
+      if (Platform.OS === 'web') {
+        window.alert('❌ Please enter your name');
+      } else {
+        Alert.alert('Error', 'Please enter your name');
+      }
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      if (Platform.OS === 'web') {
+        window.alert('❌ Password must be at least 6 characters');
+      } else {
+        Alert.alert('Error', 'Password must be at least 6 characters');
+      }
       return;
     }
 
@@ -82,7 +94,12 @@ export default function LoginScreen() {
       }
       router.replace('/');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Authentication failed');
+      const message = error.message || 'Authentication failed';
+      if (Platform.OS === 'web') {
+        window.alert(`❌ Login Failed\n\n${message}`);
+      } else {
+        Alert.alert('Error', message);
+      }
     } finally {
       setIsLoading(false);
     }
