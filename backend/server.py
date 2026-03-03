@@ -1166,9 +1166,14 @@ async def get_cognitive_tools():
 
 @api_router.post("/chat", response_model=ChatResponse)
 async def chat(http_request: Request, request: ChatRequest, session_token: Optional[str] = Cookie(None)):
-    # Get authenticated user — use session user_id if available, fallback to body
-    auth_user = await get_current_user(http_request, session_token)
-    effective_user_id = auth_user["user_id"] if auth_user else request.user_id
+    # Check for admin key first
+    admin_key = http_request.headers.get("X-Admin-Key")
+    if admin_key == ADMIN_SECRET:
+        effective_user_id = "admin_master"
+    else:
+        # Get authenticated user — use session user_id if available, fallback to body
+        auth_user = await get_current_user(http_request, session_token)
+        effective_user_id = auth_user["user_id"] if auth_user else request.user_id
 
     # Get or create agent
     agent = await db.agents.find_one({"id": request.agent_id})

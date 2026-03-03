@@ -376,8 +376,21 @@ export default function ChatScreen() {
     }, 100);
 
     try {
-      const token = await getStoredToken();
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      let token = await getStoredToken();
+      const headers: any = {};
+      
+      // Check for admin login if no token
+      if (!token && Platform.OS === 'web') {
+        const isAdminLoggedIn = localStorage.getItem('forge_admin') === 'true';
+        if (isAdminLoggedIn) {
+          headers['X-Admin-Key'] = 'forge_master_2025';
+        }
+      }
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await axios.post(`${API_URL}/api/chat`, {
         agent_id: agent.id,
         conversation_id: conversationId,
