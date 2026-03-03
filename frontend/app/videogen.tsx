@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   headerCenter: { alignItems: 'center' },
   headerTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
   headerSub: { color: C.accent, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { padding: 16, paddingBottom: 100 },
   section: { marginBottom: 24 },
   sectionTitle: {
     color: C.accent,
@@ -525,17 +525,17 @@ const styles = StyleSheet.create({
   optionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
   },
   optionCard: {
-    width: (width - 52) / 2,
+    width: '48%',
     backgroundColor: C.card,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
-    gap: 6,
+    marginBottom: 10,
   },
   optionCardActive: {
     borderColor: C.accent,
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   optionDesc: { color: C.muted, fontSize: 11 },
   optionsRow: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
   },
   durationCard: {
     flex: 1,
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
-    gap: 4,
+    marginHorizontal: 4,
   },
   durationCardActive: {
     borderColor: C.accent,
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
   durationDesc: { color: C.muted, fontSize: 10 },
   modelRow: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
   },
   modelCard: {
     flex: 1,
@@ -577,7 +577,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
-    gap: 4,
+    marginHorizontal: 4,
   },
   modelCardActive: {
     borderColor: C.accent,
