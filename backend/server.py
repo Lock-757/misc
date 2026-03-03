@@ -1468,19 +1468,20 @@ async def delete_generated_image(image_id: str):
 
 # ==================== VIDEO GENERATION ENDPOINT ====================
 
-from emergentintegrations.llm.openai.video_generation import OpenAIVideoGeneration
+# Using Grok Imagine Video API from xAI
+GROK_VIDEO_API_URL = "https://api.x.ai/v1/video/generations"
 
 class VideoGenerationRequest(BaseModel):
     prompt: str
-    size: str = "1280x720"  # "1280x720", "1792x1024", "1024x1792", "1024x1024"
-    duration: int = 4  # 4, 8, or 12 seconds
-    model: str = "sora-2"  # "sora-2" or "sora-2-pro"
+    resolution: str = "720p"  # "480p", "720p"
+    duration: int = 6  # 6 to 15 seconds
+    spicy_mode: bool = False  # Allow more adult content for admin
 
 class VideoGenerationResponse(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     prompt: str
     video_base64: str
-    size: str
+    resolution: str
     duration: int
     status: str = "completed"
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -1489,52 +1490,97 @@ class VideoGenerationResponse(BaseModel):
 async def generate_video(request: Request, vid_request: VideoGenerationRequest, session_token: Optional[str] = Cookie(None)):
     # Check for admin key first
     admin_key = request.headers.get("X-Admin-Key")
-    if admin_key == ADMIN_SECRET:
+    is_admin = admin_key == ADMIN_SECRET
+    if is_admin:
         user_id = "admin_master"
     else:
         user = await get_current_user(request, session_token)
         user_id = user["user_id"] if user else "anonymous"
 
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+    if not GROK_API_KEY:
+        raise HTTPException(status_code=500, detail="GROK_API_KEY not configured")
 
     # Validate parameters
-    valid_sizes = ["1280x720", "1792x1024", "1024x1792", "1024x1024"]
-    valid_durations = [4, 8, 12]
-    valid_models = ["sora-2", "sora-2-pro"]
-    
-    if vid_request.size not in valid_sizes:
-        raise HTTPException(status_code=400, detail=f"Invalid size. Must be one of: {valid_sizes}")
-    if vid_request.duration not in valid_durations:
-        raise HTTPException(status_code=400, detail=f"Invalid duration. Must be one of: {valid_durations}")
-    if vid_request.model not in valid_models:
-        raise HTTPException(status_code=400, detail=f"Invalid model. Must be one of: {valid_models}")
+    valid_resolutions = ["480p", "720p"]
+    if vid_request.resolution not in valid_resolutions:
+        raise HTTPException(status_code=400, detail=f"Invalid resolution. Must be one of: {valid_resolutions}")
+    if vid_request.duration < 6 or vid_request.duration > 15:
+        raise HTTPException(status_code=400, detail="Duration must be between 6 and 15 seconds")
 
     try:
-        # Run video generation in thread pool to avoid blocking
-        import asyncio
-        from concurrent.futures import ThreadPoolExecutor
+        # Prepare the request to Grok Imagine Video API
+        headers = {
+            "Authorization": f"Bearer {GROK_API_KEY}",
+            "Content-Type": "application/json"
+        }
         
-        def generate_video_sync():
-            video_gen = OpenAIVideoGeneration(api_key=EMERGENT_LLM_KEY)
-            video_bytes = video_gen.text_to_video(
-                prompt=vid_request.prompt,
-                model=vid_request.model,
-                size=vid_request.size,
-                duration=vid_request.duration,
-                max_wait_time=600
+        # Enable spicy mode for admin users
+        payload = {
+            "prompt": vid_request.prompt,
+            "resolution": vid_request.resolution,
+            "duration": vid_request.duration,
+        }
+        
+        # If admin, enable spicy mode for less restricted content
+        if is_admin or vid_request.spicy_mode:
+            payload["spicy_mode"] = True
+        
+        logger.info(f"Generating video with Grok Imagine for user {user_id}")
+        
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            # Start video generation
+            response = await client.post(
+                GROK_VIDEO_API_URL,
+                headers=headers,
+                json=payload
             )
-            return video_bytes
-        
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            video_bytes = await loop.run_in_executor(executor, generate_video_sync)
-        
-        if not video_bytes:
-            raise HTTPException(status_code=500, detail="Video generation failed - no data returned")
-        
-        # Convert to base64
-        video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            
+            if response.status_code != 200:
+                error_detail = response.json().get("error", {}).get("message", response.text)
+                raise HTTPException(status_code=response.status_code, detail=f"Grok API error: {error_detail}")
+            
+            result = response.json()
+            
+            # Check if we need to poll for completion
+            if "id" in result and "status" in result:
+                # Poll for completion
+                generation_id = result["id"]
+                max_attempts = 60  # 5 minutes max
+                for attempt in range(max_attempts):
+                    await asyncio.sleep(5)  # Wait 5 seconds between polls
+                    
+                    status_response = await client.get(
+                        f"{GROK_VIDEO_API_URL}/{generation_id}",
+                        headers=headers
+                    )
+                    
+                    if status_response.status_code != 200:
+                        continue
+                    
+                    status_result = status_response.json()
+                    
+                    if status_result.get("status") == "completed":
+                        result = status_result
+                        break
+                    elif status_result.get("status") == "failed":
+                        raise HTTPException(status_code=500, detail="Video generation failed")
+            
+            # Get the video URL or base64
+            video_url = result.get("video_url") or result.get("url") or result.get("data", [{}])[0].get("url")
+            
+            if not video_url:
+                # Check if video is directly in response as base64
+                video_b64 = result.get("video_base64") or result.get("data", [{}])[0].get("b64_json")
+                if video_b64:
+                    video_base64 = video_b64
+                else:
+                    raise HTTPException(status_code=500, detail="No video URL or data in response")
+            else:
+                # Download the video
+                video_response = await client.get(video_url)
+                if video_response.status_code != 200:
+                    raise HTTPException(status_code=500, detail="Failed to download generated video")
+                video_base64 = base64.b64encode(video_response.content).decode('utf-8')
         
         # Store in database
         video_record = {
@@ -1542,9 +1588,9 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
             "user_id": user_id,
             "prompt": vid_request.prompt,
             "video_base64": video_base64,
-            "size": vid_request.size,
+            "resolution": vid_request.resolution,
             "duration": vid_request.duration,
-            "model": vid_request.model,
+            "model": "grok-imagine-video",
             "created_at": datetime.utcnow()
         }
         await db.generated_videos.insert_one(video_record)
@@ -1555,7 +1601,7 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
             id=video_record["id"],
             prompt=vid_request.prompt,
             video_base64=video_base64,
-            size=vid_request.size,
+            resolution=vid_request.resolution,
             duration=vid_request.duration
         )
         

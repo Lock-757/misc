@@ -42,29 +42,22 @@ const C = {
   gunmetal: '#2A2A32',
 };
 
-const VIDEO_SIZES = [
-  { id: '1280x720', label: 'HD', desc: '1280x720', icon: 'tv-outline' },
-  { id: '1792x1024', label: 'Wide', desc: '1792x1024', icon: 'expand-outline' },
-  { id: '1024x1792', label: 'Portrait', desc: '1024x1792', icon: 'phone-portrait-outline' },
-  { id: '1024x1024', label: 'Square', desc: '1024x1024', icon: 'square-outline' },
+const VIDEO_RESOLUTIONS = [
+  { id: '480p', label: '480p', desc: 'Faster', icon: 'speedometer-outline' },
+  { id: '720p', label: '720p HD', desc: 'Best quality', icon: 'tv-outline' },
 ];
 
 const VIDEO_DURATIONS = [
-  { id: 4, label: '4s', desc: 'Quick', icon: 'flash-outline' },
-  { id: 8, label: '8s', desc: 'Standard', icon: 'time-outline' },
-  { id: 12, label: '12s', desc: 'Extended', icon: 'hourglass-outline' },
-];
-
-const VIDEO_MODELS = [
-  { id: 'sora-2', label: 'Sora 2', desc: 'Fast & quality' },
-  { id: 'sora-2-pro', label: 'Sora 2 Pro', desc: 'Highest quality' },
+  { id: 6, label: '6s', desc: 'Quick', icon: 'flash-outline' },
+  { id: 10, label: '10s', desc: 'Standard', icon: 'time-outline' },
+  { id: 15, label: '15s', desc: 'Extended', icon: 'hourglass-outline' },
 ];
 
 interface GeneratedVideo {
   id: string;
   prompt: string;
   video_base64: string;
-  size: string;
+  resolution: string;
   duration: number;
   created_at: string;
 }
@@ -73,9 +66,8 @@ export default function VideoGenScreen() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [prompt, setPrompt] = useState('');
-  const [selectedSize, setSelectedSize] = useState('1280x720');
-  const [selectedDuration, setSelectedDuration] = useState(4);
-  const [selectedModel, setSelectedModel] = useState('sora-2');
+  const [selectedResolution, setSelectedResolution] = useState('720p');
+  const [selectedDuration, setSelectedDuration] = useState(6);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedVideos, setGeneratedVideos] = useState<GeneratedVideo[]>([]);
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null);
@@ -185,9 +177,9 @@ export default function VideoGenScreen() {
         `${API_URL}/api/generate-video`,
         {
           prompt: prompt.trim(),
-          size: selectedSize,
+          resolution: selectedResolution,
           duration: selectedDuration,
-          model: selectedModel,
+          spicy_mode: true, // Enable for admin
         },
         {
           headers: { 
@@ -350,26 +342,28 @@ export default function VideoGenScreen() {
               </View>
             </View>
 
-            {/* Video Size */}
+            {/* Video Resolution */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Resolution</Text>
-              <View style={styles.optionsGrid}>
-                {VIDEO_SIZES.map(size => (
+              <View style={styles.optionsRow}>
+                {VIDEO_RESOLUTIONS.map(res => (
                   <TouchableOpacity
-                    key={size.id}
-                    style={[styles.optionCard, selectedSize === size.id && styles.optionCardActive]}
-                    onPress={() => setSelectedSize(size.id)}
-                    data-testid={`video-size-${size.id}`}
+                    key={res.id}
+                    style={[styles.durationCard, selectedResolution === res.id && styles.durationCardActive]}
+                    onPress={() => setSelectedResolution(res.id)}
+                    data-testid={`video-res-${res.id}`}
                   >
                     <Ionicons
-                      name={size.icon as any}
+                      name={res.icon as any}
                       size={20}
-                      color={selectedSize === size.id ? C.accent : C.muted}
+                      color={selectedResolution === res.id ? '#fff' : C.muted}
                     />
-                    <Text style={[styles.optionLabel, selectedSize === size.id && styles.optionLabelActive]}>
-                      {size.label}
+                    <Text style={[styles.durationLabel, selectedResolution === res.id && styles.durationLabelActive]}>
+                      {res.label}
                     </Text>
-                    <Text style={styles.optionDesc}>{size.desc}</Text>
+                    <Text style={[styles.durationDesc, selectedResolution === res.id && { color: C.text }]}>
+                      {res.desc}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -397,26 +391,6 @@ export default function VideoGenScreen() {
                     <Text style={[styles.durationDesc, selectedDuration === dur.id && { color: C.text }]}>
                       {dur.desc}
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Model Selection */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Model</Text>
-              <View style={styles.modelRow}>
-                {VIDEO_MODELS.map(model => (
-                  <TouchableOpacity
-                    key={model.id}
-                    style={[styles.modelCard, selectedModel === model.id && styles.modelCardActive]}
-                    onPress={() => setSelectedModel(model.id)}
-                    data-testid={`video-model-${model.id}`}
-                  >
-                    <Text style={[styles.modelLabel, selectedModel === model.id && styles.modelLabelActive]}>
-                      {model.label}
-                    </Text>
-                    <Text style={styles.modelDesc}>{model.desc}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -487,7 +461,7 @@ export default function VideoGenScreen() {
                         {video.prompt}
                       </Text>
                       <Text style={styles.videoMeta}>
-                        {video.size} · {video.duration}s · {formatDate(video.created_at)}
+                        {video.resolution || video.size} · {video.duration}s · {formatDate(video.created_at)}
                       </Text>
                     </View>
                     <TouchableOpacity
