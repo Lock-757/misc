@@ -894,8 +894,14 @@ export default function ChatScreen() {
                   </View>
 
                   {/* Settings */}
-                  <Text style={styles.menuSectionTitle}>Settings</Text>
+                  <Text style={styles.menuSectionTitle}>Settings & Network</Text>
                   <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents-dashboard'); }} data-testid="menu-agents-dashboard">
+                      <View style={[styles.menuIcon, { backgroundColor: '#10B981' + '20' }]}>
+                        <Ionicons name="people" size={22} color="#10B981" />
+                      </View>
+                      <Text style={styles.menuLabel}>Agent Network</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/settings'); }}>
                       <View style={[styles.menuIcon, { backgroundColor: '#6B7280' + '20' }]}>
                         <Ionicons name="settings" size={22} color="#6B7280" />
