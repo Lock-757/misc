@@ -1469,7 +1469,7 @@ async def delete_generated_image(image_id: str):
 # ==================== VIDEO GENERATION ENDPOINT ====================
 
 # Using Grok Imagine Video API from xAI
-GROK_VIDEO_API_URL = "https://api.x.ai/v1/video/generations"
+GROK_VIDEO_API_URL = "https://api.x.ai/v1/videos/generations"
 
 class VideoGenerationRequest(BaseModel):
     prompt: str
@@ -1514,18 +1514,20 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
             "Content-Type": "application/json"
         }
         
-        # Enable spicy mode for admin users
+        # Map resolution to aspect ratio
+        aspect_ratio = "16:9" if vid_request.resolution == "720p" else "16:9"
+        
+        # Build payload according to xAI API docs
         payload = {
+            "model": "grok-imagine-video",
             "prompt": vid_request.prompt,
             "resolution": vid_request.resolution,
             "duration": vid_request.duration,
+            "aspect_ratio": aspect_ratio,
         }
         
-        # If admin, enable spicy mode for less restricted content
-        if is_admin or vid_request.spicy_mode:
-            payload["spicy_mode"] = True
-        
         logger.info(f"Generating video with Grok Imagine for user {user_id}")
+        logger.info(f"Payload: {payload}")
         
         async with httpx.AsyncClient(timeout=600.0) as client:
             # Start video generation
