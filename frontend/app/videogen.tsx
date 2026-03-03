@@ -79,6 +79,7 @@ export default function VideoGenScreen() {
   const [generatedVideos, setGeneratedVideos] = useState<GeneratedVideo[]>([]);
   const [previewVideo, setPreviewVideo] = useState<GeneratedVideo | null>(null);
   const [progress, setProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -117,8 +118,10 @@ export default function VideoGenScreen() {
   };
 
   const generateVideo = async () => {
+    setErrorMessage(null);
+    
     if (!prompt.trim()) {
-      Alert.alert('Error', 'Please enter a prompt');
+      setErrorMessage('Please enter a prompt');
       return;
     }
 
@@ -127,7 +130,7 @@ export default function VideoGenScreen() {
     try {
       const token = await getStoredToken();
       if (!token) {
-        Alert.alert('Error', 'Please log in to generate videos');
+        setErrorMessage('Please log in to generate videos');
         setIsGenerating(false);
         return;
       }
@@ -150,11 +153,10 @@ export default function VideoGenScreen() {
       setGeneratedVideos(prev => [response.data, ...prev]);
       setPrompt('');
       Keyboard.dismiss();
-      Alert.alert('Success', 'Video generated successfully!');
     } catch (error: any) {
       console.error('Video generation error:', error);
       const message = error.response?.data?.detail || 'Failed to generate video';
-      Alert.alert('Error', message);
+      setErrorMessage(message);
     } finally {
       setIsGenerating(false);
     }
@@ -334,6 +336,17 @@ export default function VideoGenScreen() {
                 ))}
               </View>
             </View>
+
+            {/* Error Message */}
+            {errorMessage && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={20} color="#EF4444" />
+                <Text style={styles.errorText}>{errorMessage}</Text>
+                <TouchableOpacity onPress={() => setErrorMessage(null)}>
+                  <Ionicons name="close" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Generate Button */}
             <TouchableOpacity
@@ -770,5 +783,20 @@ const styles = StyleSheet.create({
   loadingSubHint: {
     color: C.muted,
     fontSize: 12,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    flex: 1,
+    color: '#DC2626',
+    fontSize: 14,
+    marginLeft: 8,
+    marginRight: 8,
   },
 });
