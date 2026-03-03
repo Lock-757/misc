@@ -1542,33 +1542,44 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
                 raise HTTPException(status_code=response.status_code, detail=f"Grok API error: {error_detail}")
             
             result = response.json()
+            logger.info(f"Grok API response: {str(result)[:500]}")
             
-            # Check if we need to poll for completion
-            if "id" in result and "status" in result:
-                # Poll for completion
-                generation_id = result["id"]
-                max_attempts = 60  # 5 minutes max
+            # Grok returns a request_id - need to poll for completion
+            request_id = result.get("request_id")
+            if request_id:
+                logger.info(f"Got request_id: {request_id}, polling for completion...")
+                max_attempts = 120  # 10 minutes max (video gen can take a while)
                 for attempt in range(max_attempts):
                     await asyncio.sleep(5)  # Wait 5 seconds between polls
                     
                     status_response = await client.get(
-                        f"{GROK_VIDEO_API_URL}/{generation_id}",
+                        f"https://api.x.ai/v1/videos/{request_id}",
                         headers=headers
                     )
                     
-                    if status_response.status_code != 200:
+                    logger.info(f"Poll attempt {attempt + 1}: status {status_response.status_code}")
+                    
+                    if status_response.status_code == 202:
+                        # Still processing
                         continue
-                    
-                    status_result = status_response.json()
-                    
-                    if status_result.get("status") == "completed":
-                        result = status_result
+                    elif status_response.status_code == 200:
+                        result = status_response.json()
+                        logger.info(f"Video ready: {str(result)[:500]}")
                         break
-                    elif status_result.get("status") == "failed":
-                        raise HTTPException(status_code=500, detail="Video generation failed")
+                    else:
+                        logger.error(f"Poll error: {status_response.text}")
+                        continue
+                else:
+                    raise HTTPException(status_code=500, detail="Video generation timed out")
             
-            # Get the video URL or base64
-            video_url = result.get("video_url") or result.get("url") or result.get("data", [{}])[0].get("url")
+            # Get the video URL from response
+            video_url = None
+            if "response" in result and "video" in result["response"]:
+                video_url = result["response"]["video"].get("url")
+            elif "video_url" in result:
+                video_url = result.get("video_url")
+            elif "url" in result:
+                video_url = result.get("url")
             
             if not video_url:
                 # Check if video is directly in response as base64
