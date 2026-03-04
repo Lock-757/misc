@@ -25,6 +25,26 @@ from io import StringIO
 
 WORKSPACE_DIR = "/app"  # Restricted workspace for agent file operations
 
+# Protected resources that agents cannot modify
+PROTECTED_AGENTS = ["Aurora"]  # Agent names that cannot be modified
+PROTECTED_FILES = [
+    "/app/backend/.env",
+    "/app/frontend/.env", 
+    "/app/backend/server.py",  # Core server - protected
+]
+PROTECTED_PATHS = [
+    "/app/backend/server.py",
+    "/etc/",
+    "/root/",
+]
+
+def is_protected_file(path: str) -> bool:
+    """Check if a file path is protected."""
+    for protected in PROTECTED_PATHS:
+        if path.startswith(protected) or path in PROTECTED_FILES:
+            return True
+    return False
+
 def parse_tool_calls(response_text: str) -> list:
     """Extract XML tool calls from agent response."""
     tools = []
@@ -39,6 +59,12 @@ def parse_tool_calls(response_text: str) -> list:
         (r'<find_filecontent[^>]*/>', 'find_filecontent'),
         (r'<find_filename[^>]*/>', 'find_filename'),
         (r'<message_user[^>]*>(.*?)</message_user>', 'message_user'),
+        # New agent management tools
+        (r'<list_agents\s*/>', 'list_agents'),
+        (r'<view_agent[^>]*/>', 'view_agent'),
+        (r'<propose_edit[^>]*>(.*?)</propose_edit>', 'propose_edit'),
+        (r'<create_sub_agent[^>]*>(.*?)</create_sub_agent>', 'create_sub_agent'),
+        (r'<self_improve>(.*?)</self_improve>', 'self_improve'),
     ]
     
     for pattern, tool_type in patterns:
@@ -65,7 +91,7 @@ def extract_xml_attrs(xml_str: str) -> dict:
         attrs[match.group(1)] = match.group(2)
     return attrs
 
-async def execute_tool(tool: dict) -> str:
+async def execute_tool(tool: dict, agent_id: str = None) -> str:
     """Execute a single tool and return the result."""
     tool_type = tool['type']
     raw = tool['raw']
@@ -131,6 +157,9 @@ async def execute_tool(tool: dict) -> str:
             if not path.startswith(WORKSPACE_DIR):
                 return f"[Error: Cannot create files outside workspace]"
             
+            if is_protected_file(path):
+                return f"[Error: {path} is protected and cannot be modified]"
+            
             try:
                 # Create directories if needed
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -146,6 +175,9 @@ async def execute_tool(tool: dict) -> str:
             
             if not path.startswith(WORKSPACE_DIR):
                 return f"[Error: Cannot edit files outside workspace]"
+            
+            if is_protected_file(path):
+                return f"[Error: {path} is protected and cannot be modified]"
             
             # Extract old_str and new_str
             old_match = re.search(r'<old_str>(.*?)</old_str>', raw, re.DOTALL)
@@ -220,13 +252,124 @@ async def execute_tool(tool: dict) -> str:
             # Just return the message content
             return f"[Agent Message]: {content}"
         
+        # ===== NEW AGENT MANAGEMENT TOOLS =====
+        
+        elif tool_type == 'list_agents':
+            # List all agents in the system
+            agents = await db.agents.find({}, {"_id": 0, "system_prompt": 0}).to_list(50)
+            agent_list = "\n".join([f"- {a['name']} (id: {a['id']}, has_tools: {a.get('has_tools', False)})" for a in agents])
+            return f"[Agents in the system]\n{agent_list}"
+        
+        elif tool_type == 'view_agent':
+            attrs = extract_xml_attrs(raw)
+            target_id = attrs.get('agent_id', '')
+            
+            agent = await db.agents.find_one({"id": target_id}, {"_id": 0})
+            if not agent:
+                return f"[Error: Agent {target_id} not found]"
+            
+            return f"[Agent Details]\nName: {agent['name']}\nPersonality: {agent.get('personality', 'N/A')}\nHas Tools: {agent.get('has_tools', False)}\nPrompt Preview: {agent.get('system_prompt', '')[:500]}..."
+        
+        elif tool_type == 'propose_edit':
+            # Propose an edit that requires approval
+            attrs = extract_xml_attrs(raw)
+            target_id = attrs.get('agent_id', '')
+            change_type = attrs.get('type', 'prompt')  # prompt, personality, tools
+            
+            # Check if target is protected
+            target_agent = await db.agents.find_one({"id": target_id})
+            if not target_agent:
+                return f"[Error: Agent {target_id} not found]"
+            
+            if target_agent['name'] in PROTECTED_AGENTS:
+                return f"[Error: {target_agent['name']} is protected and cannot be modified]"
+            
+            # Create pending change
+            change_id = str(uuid.uuid4())
+            pending = {
+                "id": change_id,
+                "proposer_id": agent_id,
+                "target_agent_id": target_id,
+                "target_agent_name": target_agent['name'],
+                "change_type": change_type,
+                "old_value": target_agent.get(f"system_{change_type}" if change_type == "prompt" else change_type, ""),
+                "new_value": content,
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.pending_changes.insert_one(pending)
+            
+            # Log the proposal
+            await db.agent_audit_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "action": "propose_edit",
+                "agent_id": agent_id,
+                "target_id": target_id,
+                "change_id": change_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            
+            return f"[Change Proposed]\nID: {change_id}\nTarget: {target_agent['name']}\nType: {change_type}\nStatus: PENDING APPROVAL\n\nThe user must approve this change before it takes effect."
+        
+        elif tool_type == 'create_sub_agent':
+            attrs = extract_xml_attrs(raw)
+            name = attrs.get('name', 'New Agent')
+            has_tools = attrs.get('has_tools', 'false').lower() == 'true'
+            
+            # Rate limit: max 3 agents per session (tracked in memory)
+            # For now, just create with approval pending
+            change_id = str(uuid.uuid4())
+            pending = {
+                "id": change_id,
+                "proposer_id": agent_id,
+                "target_agent_id": None,
+                "target_agent_name": name,
+                "change_type": "create_agent",
+                "old_value": "",
+                "new_value": json.dumps({
+                    "name": name,
+                    "system_prompt": content,
+                    "has_tools": has_tools,
+                }),
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.pending_changes.insert_one(pending)
+            
+            return f"[Agent Creation Proposed]\nID: {change_id}\nName: {name}\nHas Tools: {has_tools}\nStatus: PENDING APPROVAL\n\nThe user must approve this creation."
+        
+        elif tool_type == 'self_improve':
+            # Agent proposes improvement to its own prompt
+            if not agent_id:
+                return "[Error: No agent context for self-improvement]"
+            
+            current_agent = await db.agents.find_one({"id": agent_id})
+            if not current_agent:
+                return "[Error: Could not find self]"
+            
+            change_id = str(uuid.uuid4())
+            pending = {
+                "id": change_id,
+                "proposer_id": agent_id,
+                "target_agent_id": agent_id,
+                "target_agent_name": current_agent['name'] + " (self)",
+                "change_type": "self_improvement",
+                "old_value": current_agent.get('system_prompt', ''),
+                "new_value": content,
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.pending_changes.insert_one(pending)
+            
+            return f"[Self-Improvement Proposed]\nID: {change_id}\nStatus: PENDING APPROVAL\n\nYour improvement will take effect after user approval."
+        
         else:
             return f"[Unknown tool type: {tool_type}]"
     
     except Exception as e:
         return f"[Tool execution error: {str(e)}]"
 
-async def run_agent_with_tools(agent_prompt: str, user_message: str, max_iterations: int = 5) -> dict:
+async def run_agent_with_tools(agent_prompt: str, user_message: str, agent_id: str = None, max_iterations: int = 5) -> dict:
     """Run an agent with tool execution capabilities."""
     messages = [
         {"role": "system", "content": agent_prompt},
@@ -261,7 +404,7 @@ async def run_agent_with_tools(agent_prompt: str, user_message: str, max_iterati
         # Execute tools
         tool_output = ""
         for tool in tools:
-            result = await execute_tool(tool)
+            result = await execute_tool(tool, agent_id)
             tool_results.append({
                 'tool': tool['type'],
                 'result': result[:500]  # Truncate for storage
@@ -2736,7 +2879,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     
     if has_tools:
         # Run with tool execution
-        result = await run_agent_with_tools(agent_prompt, body.message, max_iterations=5)
+        result = await run_agent_with_tools(agent_prompt, body.message, agent_id=body.agent_id, max_iterations=5)
         
         # Store conversation
         conv_id = str(uuid.uuid4())
@@ -2811,6 +2954,93 @@ async def create_tool_agent(body: CreateToolAgentRequest):
     }
     await db.agents.insert_one(agent)
     return {"id": agent_id, "name": body.name, "status": "created"}
+
+# ==================== PENDING CHANGES APPROVAL SYSTEM ====================
+
+@api_router.get("/pending-changes")
+async def get_pending_changes():
+    """Get all pending changes awaiting approval."""
+    changes = await db.pending_changes.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return changes
+
+@api_router.post("/pending-changes/{change_id}/approve")
+async def approve_change(change_id: str, request: Request):
+    """Approve a pending change."""
+    change = await db.pending_changes.find_one({"id": change_id})
+    if not change:
+        raise HTTPException(status_code=404, detail="Change not found")
+    
+    if change["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Change already {change['status']}")
+    
+    try:
+        if change["change_type"] == "create_agent":
+            agent_data = json.loads(change["new_value"])
+            new_agent = {
+                "id": str(uuid.uuid4()),
+                "name": agent_data["name"],
+                "system_prompt": agent_data["system_prompt"],
+                "avatar": agent_data["name"][0].upper(),
+                "avatar_color": "#22C55E",
+                "personality": "created by agent",
+                "tools": [],
+                "balance": 50.0,
+                "has_tools": agent_data.get("has_tools", False),
+                "status": "active",
+                "created_by": change["proposer_id"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.agents.insert_one(new_agent)
+            
+        elif change["change_type"] in ["prompt", "self_improvement"]:
+            await db.agents.update_one(
+                {"id": change["target_agent_id"]},
+                {"$set": {"system_prompt": change["new_value"]}}
+            )
+        
+        await db.pending_changes.update_one(
+            {"id": change_id},
+            {"$set": {"status": "approved", "approved_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        
+        await db.agent_audit_log.insert_one({
+            "id": str(uuid.uuid4()),
+            "action": "approve_change",
+            "change_id": change_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        
+        return {"status": "approved", "change_id": change_id}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/pending-changes/{change_id}/reject")
+async def reject_change(change_id: str, request: Request):
+    """Reject a pending change."""
+    change = await db.pending_changes.find_one({"id": change_id})
+    if not change:
+        raise HTTPException(status_code=404, detail="Change not found")
+    
+    await db.pending_changes.update_one(
+        {"id": change_id},
+        {"$set": {"status": "rejected", "rejected_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    await db.agent_audit_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": "reject_change",
+        "change_id": change_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    
+    return {"status": "rejected", "change_id": change_id}
+
+@api_router.get("/agent-audit-log")
+async def get_audit_log():
+    """Get the agent audit log."""
+    logs = await db.agent_audit_log.find({}, {"_id": 0}).sort("timestamp", -1).to_list(100)
+    return logs
 
 # ==================== ADMIN ENDPOINTS ====================
 
