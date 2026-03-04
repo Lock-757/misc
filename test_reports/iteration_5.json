@@ -1,0 +1,54 @@
+{
+  "summary": "Verified backend moderation handling for generate-image and generate-video APIs. All targeted features working correctly: 1) Safe prompts return 200 with video_base64, 2) Provider moderation errors are detected and converted to 422 with user-friendly messages, 3) Moderation messages contain guidance about safety checks and rephrasing. The is_provider_moderation_error() function correctly detects moderation-related keywords (content moderation, rejected, policy, unsafe, safety, leak) and moderation_block_detail() returns appropriate guidance.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_moderation_handling.py",
+    "/app/test_reports/pytest/moderation_test_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "is_provider_moderation_error() correctly detects: 'content moderation', 'rejected', 'policy', 'unsafe', 'safety', 'leak'",
+    "moderation_block_detail() returns user-friendly message: 'Your {media_type} prompt was blocked by provider safety checks. Please rephrase and avoid explicit, illegal, or sensitive-leak style requests.'",
+    "422 status code properly used for moderation errors (not 400 or 500)",
+    "Moderation check in video endpoint covers both initial request failure AND polling status (400 during poll)",
+    "Backend logs show proper flow: request_id -> poll -> moderation detected -> 422 returned"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_moderation_handling.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 moderation tests passed)"
+  },
+  "test_credentials": {
+    "admin_key": "forge_master_2025 (X-Admin-Key header)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Moderation handling verified working. When provider returns 'content moderation' in error, backend converts to 422 with message 'Your {type} prompt was blocked by provider safety checks. Please rephrase and avoid explicit, illegal, or sensitive-leak style requests.' Note: Provider moderation is not 100% consistent - some borderline prompts may pass through. Test file /app/backend/tests/test_moderation_handling.py covers validation and moderation scenarios.",
+  "features_verified": {
+    "POST /api/generate-video safe prompt": "PASS - Returns 200 with non-empty video_base64 (4.4MB video data)",
+    "POST /api/generate-video moderated prompt": "PASS - Provider moderation returns fast 422 (not long poll timeout)",
+    "POST /api/generate-image moderated prompt": "PASS - Returns 422 with user-friendly message",
+    "Moderation message guidance": "PASS - Contains 'safety checks', 'rephrase', 'avoid' guidance",
+    "Invalid resolution validation": "PASS - Returns 400 (not 422 moderation)",
+    "Invalid duration validation": "PASS - Returns 400 (not 422 moderation)"
+  },
+  "moderation_function_verification": {
+    "is_provider_moderation_error": {
+      "detects": ["content moderation", "rejected", "policy", "unsafe", "safety", "leak"],
+      "returns_false_for": ["rate limit", "invalid api key", "timeout", "server error"]
+    },
+    "moderation_block_detail": {
+      "format": "Your {media_type} prompt was blocked by provider safety checks. Please rephrase and avoid explicit, illegal, or sensitive-leak style requests."
+    }
+  }
+}

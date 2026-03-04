@@ -535,6 +535,26 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def is_provider_moderation_error(error_text: str) -> bool:
+    normalized = (error_text or "").lower()
+    moderation_markers = [
+        "content moderation",
+        "rejected",
+        "policy",
+        "unsafe",
+        "safety",
+        "leak",
+    ]
+    return any(marker in normalized for marker in moderation_markers)
+
+
+def moderation_block_detail(media_type: str) -> str:
+    return (
+        f"Your {media_type} prompt was blocked by provider safety checks. "
+        "Please rephrase and avoid explicit, illegal, or sensitive-leak style requests."
+    )
+
 # ==================== MODELS ====================
 
 class Tool(BaseModel):
@@ -2586,6 +2606,8 @@ async def generate_image(request: Request, img_request: ImageGenerationRequest, 
             if response.status_code != 200:
                 error_detail = response.text
                 logger.error(f"Image generation failed: {error_detail}")
+                if is_provider_moderation_error(error_detail):
+                    raise HTTPException(status_code=422, detail=moderation_block_detail("image"))
                 if "credit" in error_detail.lower() or "rate" in error_detail.lower():
                     raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
                 raise HTTPException(status_code=response.status_code, detail=f"Image generation failed: {error_detail[:200]}")
@@ -2752,6 +2774,8 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
             if response.status_code != 200:
                 error_detail = response.text
                 logger.error(f"Video generation failed: {error_detail}")
+                if is_provider_moderation_error(error_detail):
+                    raise HTTPException(status_code=422, detail=moderation_block_detail("video"))
                 if "credit" in error_detail.lower() or "rate" in error_detail.lower():
                     raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
                 raise HTTPException(status_code=response.status_code, detail=f"Video generation failed: {error_detail[:200]}")
@@ -2795,7 +2819,14 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
 
                         continue
                     else:
-                        logger.warning(f"Poll got status {status_response.status_code}: {status_response.text[:200]}")
+                        error_text = status_response.text[:500]
+                        logger.warning(f"Poll got status {status_response.status_code}: {error_text[:200]}")
+                        if status_response.status_code == 400:
+                            if is_provider_moderation_error(error_text):
+                                raise HTTPException(status_code=422, detail=moderation_block_detail("video"))
+                            raise HTTPException(status_code=400, detail=f"Video generation status error: {error_text[:200]}")
+                        if status_response.status_code == 429:
+                            raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
                         continue
                 else:
                     raise HTTPException(status_code=500, detail="Video generation timed out")
