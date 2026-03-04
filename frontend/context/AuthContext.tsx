@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 // Admin secret - only you know this
-const ADMIN_SECRET = 'forge_master_2025';
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || 'forge_master_2025';
 
 interface User {
   user_id: string;

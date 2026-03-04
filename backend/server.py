@@ -3044,7 +3044,7 @@ async def get_audit_log():
 
 # ==================== ADMIN ENDPOINTS ====================
 
-ADMIN_SECRET = "forge_master_2025"
+ADMIN_SECRET = os.environ.get('ADMIN_SECRET', 'change_me_in_production')
 
 async def require_admin(request: Request):
     admin_key = request.headers.get("X-Admin-Key", "")
