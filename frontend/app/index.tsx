@@ -288,15 +288,24 @@ export default function ChatScreen() {
   };
 
   const handleQuickLogout = () => {
+    const performLogout = async () => {
+      await logout();
+      setShowMenu(false);
+      router.replace('/login');
+    };
+
+    if (Platform.OS === 'web') {
+      void performLogout();
+      return;
+    }
+
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Logout',
         style: 'destructive',
-        onPress: async () => {
-          await logout();
-          setShowMenu(false);
-          router.replace('/login');
+        onPress: () => {
+          void performLogout();
         },
       },
     ]);
@@ -614,8 +623,8 @@ export default function ChatScreen() {
             colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
             style={styles.headerGradient}
           >
-            <TouchableOpacity onPress={() => router.push('/history')} style={styles.headerButton}>
-              <Ionicons name="time-outline" size={24} color={METALLIC.silver} />
+            <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-left-logout-button" testID="header-left-logout-button">
+              <Ionicons name="log-out-outline" size={24} color={METALLIC.danger} />
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.push('/settings')} style={styles.agentInfo}>
@@ -651,11 +660,9 @@ export default function ChatScreen() {
               <TouchableOpacity onPress={() => setShowMenu(true)} onPressIn={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn" testID="grid-menu-btn" dataSet={{ testid: 'grid-menu-btn' }}>
                 <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
-                <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-quick-logout-button" testID="header-quick-logout-button" dataSet={{ testid: 'header-quick-logout-button' }}>
-                <Ionicons name="log-out-outline" size={24} color={METALLIC.titanium} />
+              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerLogoutPill} data-testid="header-quick-logout-button" testID="header-quick-logout-button" dataSet={{ testid: 'header-quick-logout-button' }}>
+                <Ionicons name="log-out-outline" size={16} color={METALLIC.titanium} />
+                <Text style={styles.headerLogoutText}>Logout</Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>
@@ -918,6 +925,17 @@ export default function ChatScreen() {
                     <Ionicons name="close" size={24} color={METALLIC.titanium} />
                   </TouchableOpacity>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.menuQuickLogoutButton}
+                  onPress={() => {
+                    setShowMenu(false);
+                    handleQuickLogout();
+                  }}
+                >
+                  <Ionicons name="log-out-outline" size={16} color={METALLIC.danger} />
+                  <Text style={styles.menuQuickLogoutText}>Log out</Text>
+                </TouchableOpacity>
                 
                 <ScrollView showsVerticalScrollIndicator={false} style={styles.menuScroll}>
                   {/* Agents & Chat */}
@@ -1084,6 +1102,7 @@ export default function ChatScreen() {
                       dataSet={{ testid: 'menu-logout-button' }}
                     >
                       <Ionicons name="log-out-outline" size={20} color={METALLIC.danger} />
+                      <Text style={styles.menuLogoutText}>Logout</Text>
                     </TouchableOpacity>
                   </View>
                 </ScrollView>
@@ -1108,6 +1127,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   headerButton: { padding: 6 },
+  headerLogoutPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginLeft: 6,
+  },
+  headerLogoutText: {
+    color: METALLIC.silver,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   agentInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' },
   avatarContainer: { marginRight: 10 },
@@ -1341,6 +1377,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 20,
   },
+  menuQuickLogoutButton: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239,68,68,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.55)',
+    marginBottom: 14,
+  },
+  menuQuickLogoutText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
   menuTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -1495,7 +1551,20 @@ const styles = StyleSheet.create({
     color: METALLIC.titanium,
   },
   logoutButton: {
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.2)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  menuLogoutText: {
+    color: METALLIC.danger,
+    fontSize: 12,
+    fontWeight: '600',
   },
   adminButton: {
     flexDirection: 'row',

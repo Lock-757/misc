@@ -210,29 +210,39 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
-              onPress={handleEmailAuth}
-              disabled={isLoading}
-              data-testid="login-submit-button"
-              testID="login-submit-button"
-              dataSet={{ testid: 'login-submit-button' }}
-            >
-              <LinearGradient
-                colors={[METALLIC.accent, '#8B5CF6']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.buttonGradient}
+            {Platform.OS === 'web' ? (
+              <button
+                type="button"
+                onClick={() => { void handleEmailAuth(); }}
+                disabled={isLoading}
+                data-testid="login-submit-button"
+                style={isLoading ? styles.webSubmitButtonDisabled : styles.webSubmitButton}
               >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>
-                    {isSignUp ? 'Create Account' : 'Sign In'}
-                  </Text>
-                )}
-              </LinearGradient>
-            </Pressable>
+                {isLoading ? 'Loading...' : (isSignUp ? 'Create Account' : 'Sign In')}
+              </button>
+            ) : (
+              <Pressable
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+                onPress={handleEmailAuth}
+                disabled={isLoading}
+                testID="login-submit-button"
+              >
+                <LinearGradient
+                  colors={[METALLIC.accent, '#8B5CF6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.buttonGradient}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>
+                      {isSignUp ? 'Create Account' : 'Sign In'}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            )}
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -356,6 +366,31 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     transform: [{ scale: 0.995 }],
   },
+  webSubmitButton: {
+    marginTop: 8,
+    width: '100%',
+    padding: '16px 20px',
+    borderRadius: 14,
+    border: '0px solid transparent',
+    background: 'linear-gradient(90deg, #6366F1 0%, #8B5CF6 100%)',
+    color: '#ffffff',
+    fontWeight: 600,
+    fontSize: 16,
+    cursor: 'pointer',
+  } as any,
+  webSubmitButtonDisabled: {
+    marginTop: 8,
+    width: '100%',
+    padding: '16px 20px',
+    borderRadius: 14,
+    border: '0px solid transparent',
+    background: 'linear-gradient(90deg, #4B4D85 0%, #615091 100%)',
+    color: '#ffffff',
+    fontWeight: 600,
+    fontSize: 16,
+    cursor: 'not-allowed',
+    opacity: 0.8,
+  } as any,
   buttonGradient: {
     paddingVertical: 16,
     alignItems: 'center',

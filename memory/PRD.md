@@ -98,6 +98,26 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
   - Manual curl confirmed `/api/generate-video` returns `200` with non-empty `video_base64`.
   - Testing agent report `iteration_4.json` passed targeted backend/frontend regressions (video, grid menu, mobile input visibility).
 
+### Session 7 (2026-03-04) — Session Recovery + Grid/Menu Stability + Devin Visibility
+- **Session recovery hardening**:
+  - Added `resetSession()` flow in `frontend/context/AuthContext.tsx` to clear stale admin/session state.
+  - Added login screen `Reset Session` action in `frontend/app/login.tsx`.
+  - Replaced blank unauthenticated state in `frontend/app/index.tsx` with a recovery UI (Go to Login / Reset Session).
+- **Logout discoverability & reliability**:
+  - Added explicit logout affordances and web-safe logout behavior in `frontend/app/index.tsx`.
+  - Header left control now performs immediate logout on web (no hidden alert dependency).
+  - Added persistent quick logout action in grid menu.
+- **Grid/menu reliability**:
+  - Modal overlay updated to explicit `Pressable` backdrop close behavior.
+  - Grid menu open/close behavior revalidated on web.
+- **Devin visibility & agent consistency**:
+  - Added backend `ensure_core_agents()` safeguard in `backend/server.py` called from `GET /api/agents` to ensure Aurora + Devin exist.
+  - Extended `AgentConfig`/create/update models with `has_tools` support.
+  - Agent list UI (`frontend/app/agents.tsx`) now prioritizes Devin/Devon at top and confirms tool-agent label.
+- **Verification**:
+  - Web smoke checks: login works, grid menu opens (`Features` visible), direct `/agents` shows `Devin`.
+  - Top-left logout action returns user to `/login` after Expo service refresh.
+
 ### Session 4 (2026-03-02) — HD Video Generation & Cognitive Tools System
 - **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
   - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
