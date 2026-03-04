@@ -11,8 +11,8 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const ADMIN_KEY = 'forge_master_2025';
-const ADMIN_HEADERS = { 'X-Admin-Key': ADMIN_KEY };
+const ADMIN_KEY = process.env.EXPO_PUBLIC_ADMIN_SECRET;
+const ADMIN_HEADERS = ADMIN_KEY ? { 'X-Admin-Key': ADMIN_KEY } : {};
 
 const C = {
   bg: '#0A0A0F',
@@ -93,6 +93,11 @@ export default function AdminScreen() {
     if (!isReady) return;
     if (!isAdmin) {
       router.replace('/');
+      return;
+    }
+    if (!ADMIN_KEY) {
+      Alert.alert('Configuration Error', 'Admin secret is missing in app environment.');
+      setLoading(false);
       return;
     }
     loadData();

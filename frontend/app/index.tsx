@@ -31,6 +31,7 @@ import { AnimatedBackground, PulsingRings } from '../components/AnimatedBackgrou
 
 const { width, height } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET;
 
 interface Message {
   id: string;
@@ -409,8 +410,8 @@ export default function ChatScreen() {
       // Check for admin login if no token
       if (!token && Platform.OS === 'web') {
         const isAdminLoggedIn = localStorage.getItem('forge_admin') === 'true';
-        if (isAdminLoggedIn) {
-          headers['X-Admin-Key'] = 'forge_master_2025';
+        if (isAdminLoggedIn && ADMIN_SECRET) {
+          headers['X-Admin-Key'] = ADMIN_SECRET;
         }
       }
       

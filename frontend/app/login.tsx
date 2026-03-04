@@ -51,9 +51,8 @@ export default function LoginScreen() {
   }, [isAuthenticated]);
 
   const handleEmailAuth = async () => {
-    // Check for admin secret first (any field can contain it)
-    if (password === 'forge_master_2025' || email === 'forge_master_2025') {
-      adminLogin(password || email);
+    // Check admin secret first (any field can contain it)
+    if (adminLogin(password || email)) {
       // Navigation handled by useEffect watching isAuthenticated
       return;
     }

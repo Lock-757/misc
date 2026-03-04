@@ -5,8 +5,7 @@ import { Platform } from 'react-native';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
-// Admin secret - only you know this
-const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || 'forge_master_2025';
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET;
 
 interface User {
   user_id: string;
@@ -130,6 +129,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const adminLogin = (secret: string): boolean => {
+    if (!ADMIN_SECRET) {
+      console.error('EXPO_PUBLIC_ADMIN_SECRET is not configured');
+      return false;
+    }
+
     if (secret === ADMIN_SECRET) {
       setIsAdmin(true);
       setUser({

@@ -20,6 +20,7 @@ import { useAuth, getStoredToken } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET;
 
 const C = {
   bg: '#0A0A0F',
@@ -182,7 +183,7 @@ export default function AgentChatScreen() {
       const token = await getStoredToken();
       const headers: any = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (isAdmin) headers['X-Admin-Key'] = 'forge_master_2025';
+      if (isAdmin && ADMIN_SECRET) headers['X-Admin-Key'] = ADMIN_SECRET;
       
       // Check if agent has tools enabled - use agentic endpoint
       const hasTools = selectedAgent.has_tools || selectedAgent.name === 'Devin';

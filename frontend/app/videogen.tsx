@@ -24,7 +24,7 @@ import { useAuth, getStoredToken } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const ADMIN_SECRET = 'forge_master_2025';
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET;
 
 const C = {
   bg: '#0A0A0F',
@@ -125,7 +125,9 @@ export default function VideoGenScreen() {
       }
       
       if (isAdminLoggedIn) {
-        headers['X-Admin-Key'] = ADMIN_SECRET;
+        if (ADMIN_SECRET) {
+          headers['X-Admin-Key'] = ADMIN_SECRET;
+        }
       }
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -162,6 +164,11 @@ export default function VideoGenScreen() {
         
         if (isAdminLoggedIn) {
           // Use admin secret as auth header for admin users
+          if (!ADMIN_SECRET) {
+            setErrorMessage('Admin secret is missing in app environment');
+            setIsGenerating(false);
+            return;
+          }
           token = ADMIN_SECRET;
         }
       }
@@ -184,7 +191,7 @@ export default function VideoGenScreen() {
         {
           headers: { 
             Authorization: `Bearer ${token}`,
-            'X-Admin-Key': token === ADMIN_SECRET ? ADMIN_SECRET : ''
+            'X-Admin-Key': token === ADMIN_SECRET && ADMIN_SECRET ? ADMIN_SECRET : ''
           },
           timeout: 700000, // 11+ minutes for video generation
         }
@@ -247,7 +254,9 @@ export default function VideoGenScreen() {
           headers['Authorization'] = `Bearer ${token}`;
         }
         if (isAdminLoggedIn) {
-          headers['X-Admin-Key'] = ADMIN_SECRET;
+          if (ADMIN_SECRET) {
+            headers['X-Admin-Key'] = ADMIN_SECRET;
+          }
         }
         
         await axios.delete(`${API_URL}/api/generated-videos/${videoId}`, { headers });
