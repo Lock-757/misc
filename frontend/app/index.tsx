@@ -896,7 +896,7 @@ export default function ChatScreen() {
                   {/* Settings */}
                   <Text style={styles.menuSectionTitle}>Settings & Network</Text>
                   <View style={styles.menuGrid}>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agent-chat'); }} data-testid="menu-agent-chat">
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agentchat'); }} data-testid="menu-agent-chat">
                       <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
                         <Ionicons name="chatbubbles" size={22} color="#F59E0B" />
                       </View>
