@@ -146,8 +146,16 @@ export default function ImageGenScreen() {
       Alert.alert('Success', 'Image generated successfully!');
     } catch (error: any) {
       console.error('Image generation error:', error);
-      const message = error.response?.data?.detail || 'Failed to generate image';
-      Alert.alert('Error', message);
+      let message = error.response?.data?.detail || 'Failed to generate image';
+      
+      // Check for rate limit / credits exhausted
+      if (message.includes('credits') || message.includes('rate') || message.includes('429') || error.response?.status === 429) {
+        message = 'API credits exhausted. Please try again later or contact support.';
+      } else if (error.response?.status === 500) {
+        message = 'Server error. The AI service may be temporarily unavailable.';
+      }
+      
+      Alert.alert('Generation Failed', message);
     } finally {
       setIsGenerating(false);
     }
@@ -510,7 +518,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  backButton: { padding: 4 },
+  backButton: { padding: 8, marginRight: 8 },
   headerTitle: { fontSize: 17, fontWeight: '600', color: METALLIC.platinum, letterSpacing: 0.5 },
   headerRight: { minWidth: 40, alignItems: 'flex-end' },
   adultBadge: {

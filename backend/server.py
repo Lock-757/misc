@@ -2951,7 +2951,13 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     
     if has_tools:
         # Run with tool execution
-        result = await run_agent_with_tools(agent_prompt, body.message, agent_id=body.agent_id, max_iterations=5)
+        try:
+            result = await run_agent_with_tools(agent_prompt, body.message, agent_id=body.agent_id, max_iterations=5)
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg or "rate" in error_msg.lower() or "credit" in error_msg.lower():
+                raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
+            raise HTTPException(status_code=500, detail=f"Agent error: {error_msg[:200]}")
         
         # Store conversation
         conv_id = str(uuid.uuid4())

@@ -209,10 +209,19 @@ export default function AgentChatScreen() {
       
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
+      let errorContent = err.response?.data?.detail || err.message;
+      
+      // Improve error messages
+      if (err.response?.status === 429 || errorContent.includes('credit') || errorContent.includes('rate')) {
+        errorContent = '⚠️ API credits exhausted. Please add more credits to your Grok account.';
+      } else if (err.response?.status === 500) {
+        errorContent = '⚠️ Server error. The AI service may be temporarily unavailable.';
+      }
+      
       const errorMsg: ChatMessage = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `Error: ${err.response?.data?.detail || err.message}`,
+        content: errorContent,
         agent_name: selectedAgent.name,
         agent_color: C.danger,
         timestamp: new Date().toISOString(),
