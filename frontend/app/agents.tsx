@@ -36,6 +36,7 @@ interface Agent {
   avatar_color: string;
   model: string;
   is_template: boolean;
+  has_tools?: boolean;
 }
 
 export default function AgentsScreen() {
@@ -52,7 +53,15 @@ export default function AgentsScreen() {
   const loadAgents = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/agents`);
-      setAgents(res.data.filter((a: Agent) => !a.is_template));
+      const filtered = (res.data || []).filter((a: Agent) => !a.is_template);
+      filtered.sort((a: Agent, b: Agent) => {
+        const aIsDevin = (a.name || '').toLowerCase() === 'devin' || (a.name || '').toLowerCase() === 'devon';
+        const bIsDevin = (b.name || '').toLowerCase() === 'devin' || (b.name || '').toLowerCase() === 'devon';
+        if (aIsDevin && !bIsDevin) return -1;
+        if (!aIsDevin && bIsDevin) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      setAgents(filtered);
     } catch (error) {
       console.log('Error loading agents:', error);
     } finally {
@@ -144,7 +153,7 @@ export default function AgentsScreen() {
             </View>
           ) : (
             agents.map((agent) => (
-              <TouchableOpacity key={agent.id} style={styles.agentCard} onPress={() => router.back()}>
+              <TouchableOpacity key={agent.id} style={styles.agentCard} onPress={() => router.back()} data-testid={`agents-list-item-${agent.id}`}>
                 <View style={[styles.agentAvatar, { backgroundColor: agent.avatar_color + '20' }]}>
                   <Ionicons name={getAvatarIcon(agent.avatar)} size={24} color={agent.avatar_color} />
                 </View>

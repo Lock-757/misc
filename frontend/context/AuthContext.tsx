@@ -25,6 +25,7 @@ interface AuthContextType {
   loginWithGoogle: () => void;
   handleGoogleCallback: (sessionId: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetSession: () => Promise<void>;
   refreshUser: () => Promise<void>;
   adminLogin: (secret: string) => boolean;
 }
@@ -247,6 +248,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetSession = async () => {
+    try {
+      await removeToken();
+      if (Platform.OS === 'web') {
+        localStorage.removeItem('forge_admin');
+        if (window.location.hash) {
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        }
+      } else {
+        await SecureStore.deleteItemAsync('forge_admin');
+      }
+    } catch (error) {
+      console.log('Session reset error:', error);
+    } finally {
+      setIsAdmin(false);
+      setUser(null);
+    }
+  };
+
   const refreshUser = async () => {
     // Re-validate token against the server
     try {
@@ -278,6 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         handleGoogleCallback,
         logout,
+        resetSession,
         refreshUser,
         adminLogin,
       }}

@@ -14,6 +14,7 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  Pressable,
   Easing,
   AppState,
   AppStateStatus,
@@ -86,7 +87,7 @@ export default function ChatScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
   // Auth
-  const { user, isLoading: authLoading, isAuthenticated, isAdmin, logout } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated, isAdmin, logout, resetSession } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -286,6 +287,28 @@ export default function ChatScreen() {
     setRefreshing(false);
   };
 
+  const handleQuickLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          setShowMenu(false);
+          router.replace('/login');
+        },
+      },
+    ]);
+  };
+
+  const handleSessionReset = async () => {
+    await resetSession();
+    setShowMenu(false);
+    setShowAgentPicker(false);
+    router.replace('/login');
+  };
+
   // Show loading while checking auth
   if (authLoading) {
     return (
@@ -301,7 +324,25 @@ export default function ChatScreen() {
 
   // Don't render if not authenticated (will redirect)
   if (!isAuthenticated) {
-    return null;
+    return (
+      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.authRecoveryContainer} data-testid="auth-recovery-screen">
+            <Ionicons name="warning-outline" size={44} color={METALLIC.titanium} />
+            <Text style={styles.authRecoveryTitle}>Session needed</Text>
+            <Text style={styles.authRecoverySubtitle}>Please login again or reset your session if the app got stuck.</Text>
+            <View style={styles.authRecoveryActions}>
+              <TouchableOpacity style={styles.authRecoveryPrimary} onPress={() => router.replace('/login')} data-testid="auth-recovery-login-button">
+                <Text style={styles.authRecoveryPrimaryText}>Go to Login</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.authRecoverySecondary} onPress={handleSessionReset} data-testid="auth-recovery-reset-button">
+                <Text style={styles.authRecoverySecondaryText}>Reset Session</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
   }
 
   // Voice Recording
@@ -607,11 +648,14 @@ export default function ChatScreen() {
               <TouchableOpacity onPress={() => router.push('/search')} style={styles.headerButton}>
                 <Ionicons name="search-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn">
+              <TouchableOpacity onPress={() => setShowMenu(true)} onPressIn={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn">
                 <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
               <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
                 <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-quick-logout-button">
+                <Ionicons name="log-out-outline" size={24} color={METALLIC.titanium} />
               </TouchableOpacity>
             </View>
           </LinearGradient>
@@ -860,13 +904,10 @@ export default function ChatScreen() {
         </Modal>
 
         {/* Features Menu Modal */}
-        <Modal visible={showMenu} transparent animationType="fade">
-          <TouchableOpacity 
-            style={styles.menuOverlay} 
-            activeOpacity={1} 
-            onPress={() => setShowMenu(false)}
-          >
-            <TouchableOpacity activeOpacity={1} style={styles.menuContainer} onPress={(e) => e.stopPropagation()}>
+        <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
+          <View style={styles.menuOverlay}>
+            <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)} data-testid="menu-overlay-close" />
+            <View style={styles.menuContainer} data-testid="menu-container">
               <LinearGradient
                 colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                 style={styles.menuGradient}
@@ -1036,19 +1077,17 @@ export default function ChatScreen() {
                       style={styles.logoutButton}
                       onPress={() => {
                         setShowMenu(false);
-                        Alert.alert('Logout', 'Are you sure you want to logout?', [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Logout', style: 'destructive', onPress: logout },
-                        ]);
+                        handleQuickLogout();
                       }}
+                      data-testid="menu-logout-button"
                     >
                       <Ionicons name="log-out-outline" size={20} color={METALLIC.danger} />
                     </TouchableOpacity>
                   </View>
                 </ScrollView>
               </LinearGradient>
-            </TouchableOpacity>
-          </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
       </SafeAreaView>
     </LinearGradient>
@@ -1216,6 +1255,55 @@ const styles = StyleSheet.create({
   typingDots: { flexDirection: 'row', gap: 4 },
   dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: METALLIC.silver },
   typingText: { fontSize: 12, color: METALLIC.titanium, letterSpacing: 0.5 },
+  authRecoveryContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  authRecoveryTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: METALLIC.platinum,
+  },
+  authRecoverySubtitle: {
+    fontSize: 14,
+    color: METALLIC.titanium,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 420,
+  },
+  authRecoveryActions: {
+    marginTop: 12,
+    width: '100%',
+    maxWidth: 320,
+    gap: 10,
+  },
+  authRecoveryPrimary: {
+    backgroundColor: METALLIC.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  authRecoveryPrimaryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  authRecoverySecondary: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  authRecoverySecondaryText: {
+    color: METALLIC.silver,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   inputWrapper: { paddingHorizontal: 12, paddingBottom: Platform.OS === 'ios' ? 6 : 12, paddingTop: 6 },
   inputGradient: { borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 4, paddingRight: 4, paddingVertical: 4 },
@@ -1230,6 +1318,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
+  },
+  menuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   menuContainer: {
     maxHeight: height * 0.8,

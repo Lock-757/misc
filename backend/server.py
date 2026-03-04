@@ -575,6 +575,7 @@ class AgentConfig(BaseModel):
     temperature: float = 0.7
     adult_mode: bool = False
     tools: List[Tool] = []
+    has_tools: bool = False
     is_template: bool = False
     template_category: str = ""
     # Multi-agent economy fields
@@ -627,6 +628,7 @@ class AgentConfigCreate(BaseModel):
     model: Optional[str] = "grok-3"
     temperature: Optional[float] = 0.7
     adult_mode: Optional[bool] = False
+    has_tools: Optional[bool] = False
     is_template: Optional[bool] = False
     template_category: Optional[str] = ""
 
@@ -639,6 +641,7 @@ class AgentConfigUpdate(BaseModel):
     model: Optional[str] = None
     temperature: Optional[float] = None
     adult_mode: Optional[bool] = None
+    has_tools: Optional[bool] = None
 
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1147,8 +1150,41 @@ async def create_agent(config: AgentConfigCreate):
     await db.agents.insert_one(agent.model_dump())
     return agent
 
+
+async def ensure_core_agents() -> None:
+    aurora_exists = await db.agents.find_one({"name": {"$regex": "^Aurora$", "$options": "i"}}, {"_id": 0, "id": 1})
+    if not aurora_exists:
+        aurora = AgentConfig(
+            name="Aurora",
+            avatar="sparkles",
+            avatar_color="#6366F1",
+            system_prompt="You are Aurora, the primary intelligence of the Agent Forge. Be strategic, clear, and helpful.",
+            personality="Visionary and precise",
+            has_tools=False,
+        )
+        await db.agents.insert_one(aurora.model_dump())
+
+    devin_exists = await db.agents.find_one({"name": {"$regex": "^(Devin|Devon)$", "$options": "i"}}, {"_id": 0, "id": 1})
+    if not devin_exists:
+        devin = AgentConfig(
+            name="Devin",
+            avatar="code-slash",
+            avatar_color="#22C55E",
+            system_prompt=(
+                "You are Devin, a tool-enabled engineering agent inside the Agent Forge. "
+                "You can reason about code, debugging, and implementation plans while respecting approval safeguards."
+            ),
+            personality="Autonomous engineer",
+            has_tools=True,
+        )
+        devin_doc = devin.model_dump()
+        devin_doc["status"] = "active"
+        devin_doc["description"] = "Core tool-enabled engineering agent"
+        await db.agents.insert_one(devin_doc)
+
 @api_router.get("/agents", response_model=List[AgentConfig])
 async def get_agents(include_templates: bool = False):
+    await ensure_core_agents()
     query = {} if include_templates else {"is_template": {"$ne": True}}
     agents = await db.agents.find(query).to_list(100)
     return [AgentConfig(**a) for a in agents]

@@ -34,7 +34,7 @@ const METALLIC = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, register, loginWithGoogle, isLoading: authLoading, adminLogin, isAuthenticated } = useAuth();
+  const { login, register, loginWithGoogle, isLoading: authLoading, adminLogin, isAuthenticated, resetSession } = useAuth();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -106,6 +106,15 @@ export default function LoginScreen() {
 
   const handleGoogleAuth = () => {
     loginWithGoogle();
+  };
+
+  const handleResetSession = async () => {
+    await resetSession();
+    if (Platform.OS === 'web') {
+      window.location.href = '/login';
+      return;
+    }
+    router.replace('/login');
   };
 
   if (authLoading) {
@@ -227,11 +236,16 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleAuth}>
+            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleAuth} data-testid="login-google-button">
               <View style={styles.googleIconContainer}>
                 <Ionicons name="logo-google" size={20} color="#fff" />
               </View>
               <Text style={styles.googleText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.resetSessionButton} onPress={handleResetSession} data-testid="login-reset-session-button">
+              <Ionicons name="refresh-circle-outline" size={16} color={METALLIC.titanium} />
+              <Text style={styles.resetSessionText}>Reset Session</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -375,6 +389,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: METALLIC.platinum,
+  },
+  resetSessionButton: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  resetSessionText: {
+    fontSize: 13,
+    color: METALLIC.titanium,
+    fontWeight: '500',
   },
   footer: {
     marginTop: 32,

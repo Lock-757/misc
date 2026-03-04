@@ -317,6 +317,66 @@ backend:
         comment: "Agent Templates API fully functional - GET templates returns 5 default templates, POST from-template creates agents successfully."
 
 frontend:
+  - task: "Session Recovery Flow - Reset Session Button"
+    implemented: true
+    working: true
+    file: "app/login.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Reset Session button found on login screen. Button is visible and clickable. Located at bottom of login form below Google auth option."
+
+  - task: "Login Authentication"
+    implemented: true
+    working: false
+    file: "app/login.tsx"
+    stuck_count: 1
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL BLOCKER: Login button not functional on web. Tested with credentials (email: admin@aurora.dev, password: forge_master_2025). Button click does not trigger handleEmailAuth function. No console errors shown. Button appears clickable but onPress handler not firing. This blocks all authenticated feature testing including grid menu, logout, and agent list tests."
+
+  - task: "Grid Menu and Navigation"
+    implemented: true
+    working: "NA"
+    file: "app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Cannot test - blocked by login authentication failure. Code review shows grid-menu-btn, menu-container, and menu-overlay-close data-testids are present in index.tsx."
+
+  - task: "Header Quick Logout Button"
+    implemented: true
+    working: "NA"
+    file: "app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Cannot test - blocked by login authentication failure. Code review shows header-quick-logout-button data-testid present at line 657 of index.tsx."
+
+  - task: "Agent List with Devin Visibility"
+    implemented: true
+    working: "NA"
+    file: "app/agents.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "Cannot test - blocked by login authentication failure. Code review shows agents.tsx has sorting logic to place Devin/Devon first (lines 57-63) and proper data-testids for list items."
+
   - task: "Features Menu Modal"
     implemented: true
     working: true
@@ -342,8 +402,10 @@ frontend:
         comment: "New screen created for scheduled task management"
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "Login Authentication"
+  stuck_tasks:
+    - "Login Authentication"
   test_all: false
   test_priority: "high_first"
 
@@ -354,3 +416,5 @@ agent_communication:
     message: "Stabilization phase: Created missing scheduled.tsx, added Features menu modal to main screen with navigation to all 15+ screens including Agents, Templates, Memory, Bookmarks, Search, Export, HD Images, Image Editor, Tools, Scheduled Tasks, Settings, UI Editor, Stats. Backend APIs verified running. Ready for comprehensive backend testing."
   - agent: "testing"
     message: "Comprehensive backend testing completed successfully! All 25 API endpoints tested with 100% pass rate. Core functionality verified: Agent CRUD (create/read/update), Chat with Grok AI integration, Memory management, Search across messages/conversations, Bookmarks, Quick Replies, Agent Templates, Scheduled Tasks, Data Export, Usage Stats, UI Configuration. Grok AI integration confirmed working with proper responses. Backend is production-ready and fully functional."
+  - agent: "testing"
+    message: "CRITICAL REGRESSION TEST RESULTS: Focused regression testing for session recovery, grid menu, logout, and agent list visibility reveals BLOCKING issue. Test 1 (Session Recovery) PASSED - Reset Session button exists and is clickable on login screen. Tests 2-4 BLOCKED - Login authentication completely non-functional on web. Sign In button does not trigger authentication logic when clicked. Tested multiple click methods (button selector, coordinates, Enter key) - all fail. No console errors. localStorage shows no admin status or session token after login attempt. Root cause: TouchableOpacity onPress handler in login.tsx not firing on web platform. This is a CRITICAL BLOCKER preventing all authenticated feature testing. Recommendation: Fix login button web compatibility before retesting remaining features."
