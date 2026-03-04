@@ -328,18 +328,24 @@ frontend:
       - working: true
         agent: "testing"
         comment: "Reset Session button found on login screen. Button is visible and clickable. Located at bottom of login form below Google auth option."
+      - working: true
+        agent: "testing"
+        comment: "PASS: Re-tested Reset Session button. Found using text selector 'text=Reset Session'. Button is visible, enabled, and clickable. Data-testid attribute not transferred to DOM in React Native Web, but button functionality is accessible."
 
   - task: "Login Authentication"
     implemented: true
     working: false
     file: "app/login.tsx"
-    stuck_count: 1
+    stuck_count: 2
     priority: "critical"
     needs_retesting: true
     status_history:
       - working: false
         agent: "testing"
         comment: "CRITICAL BLOCKER: Login button not functional on web. Tested with credentials (email: admin@aurora.dev, password: forge_master_2025). Button click does not trigger handleEmailAuth function. No console errors shown. Button appears clickable but onPress handler not firing. This blocks all authenticated feature testing including grid menu, logout, and agent list tests."
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL BLOCKER CONFIRMED: Re-tested login extensively. TouchableOpacity onPress handler is NOT firing on web platform. Verified: (1) Admin secret 'forge_master_2025' is correctly loaded, (2) Email/password fields fill correctly, (3) Sign In button is found and clicked, (4) After click, localStorage forge_admin remains null after 8 seconds, (5) URL stays at /login, (6) No navigation occurs. ROOT CAUSE: TouchableOpacity with nested LinearGradient (lines 212-232 of login.tsx) does not properly handle click events on web. The onPress event is being blocked or not propagated. This is a known React Native Web issue. SOLUTION NEEDED: Replace TouchableOpacity with Pressable or add web-specific click handler. Login is completely broken on web, blocking ALL authenticated features."
 
   - task: "Grid Menu and Navigation"
     implemented: true
@@ -418,3 +424,5 @@ agent_communication:
     message: "Comprehensive backend testing completed successfully! All 25 API endpoints tested with 100% pass rate. Core functionality verified: Agent CRUD (create/read/update), Chat with Grok AI integration, Memory management, Search across messages/conversations, Bookmarks, Quick Replies, Agent Templates, Scheduled Tasks, Data Export, Usage Stats, UI Configuration. Grok AI integration confirmed working with proper responses. Backend is production-ready and fully functional."
   - agent: "testing"
     message: "CRITICAL REGRESSION TEST RESULTS: Focused regression testing for session recovery, grid menu, logout, and agent list visibility reveals BLOCKING issue. Test 1 (Session Recovery) PASSED - Reset Session button exists and is clickable on login screen. Tests 2-4 BLOCKED - Login authentication completely non-functional on web. Sign In button does not trigger authentication logic when clicked. Tested multiple click methods (button selector, coordinates, Enter key) - all fail. No console errors. localStorage shows no admin status or session token after login attempt. Root cause: TouchableOpacity onPress handler in login.tsx not firing on web platform. This is a CRITICAL BLOCKER preventing all authenticated feature testing. Recommendation: Fix login button web compatibility before retesting remaining features."
+  - agent: "testing"
+    message: "CRITICAL BLOCKER RE-CONFIRMED - POST-FIX REGRESSION: Extensive debugging reveals login is COMPLETELY BROKEN on web platform. Test Results: (1) ✓ PASS: Reset Session button found and functional. (2) ✗ CRITICAL FAIL: Login button (lines 212-232 login.tsx) onPress handler NOT firing. Verified admin secret loaded correctly ('forge_master_2025'), form fields fill properly, button is clicked, but handleEmailAuth NEVER executes. After 8 seconds, localStorage.getItem('forge_admin') remains null. No state changes occur. (3-5) ✗ BLOCKED: Grid menu, logout, and agent list tests cannot proceed without authentication. ROOT CAUSE IDENTIFIED: TouchableOpacity with nested LinearGradient does not propagate click events on React Native Web (known platform limitation). SOLUTION REQUIRED: Replace TouchableOpacity on lines 212-232 with Pressable component, or add explicit web onClick handler. This is a SHOW-STOPPER bug - the app cannot be used on web at all. Stuck count increased to 2."

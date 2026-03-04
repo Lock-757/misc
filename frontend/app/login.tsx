@@ -213,6 +213,7 @@ export default function LoginScreen() {
               style={styles.primaryButton}
               onPress={handleEmailAuth}
               disabled={isLoading}
+              data-testid="login-submit-button"
             >
               <LinearGradient
                 colors={[METALLIC.accent, '#8B5CF6']}
