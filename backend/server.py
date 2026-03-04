@@ -2731,28 +2731,45 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
                         headers=headers
                     )
                     
+                    logger.info(f"Poll {attempt+1}: status={status_response.status_code}")
+                    
                     if status_response.status_code == 202:
                         continue  # Still processing
                     elif status_response.status_code == 200:
                         result = status_response.json()
-                        break
+                        logger.info(f"Poll result: {str(result)[:500]}")
+                        # Check if status is "done"
+                        if result.get("status") == "done":
+                            break
+                        # Also check for video url directly
+                        if result.get("video") or result.get("url"):
+                            break
+                        continue
                     else:
+                        logger.warning(f"Poll got status {status_response.status_code}: {status_response.text[:200]}")
                         continue
                 else:
                     raise HTTPException(status_code=500, detail="Video generation timed out")
             
-            # Get the video URL/data from response
+            # Get the video URL/data from response - check multiple possible structures
             video_url = None
             video_base64 = None
             
-            if "response" in result and "video" in result["response"]:
-                video_url = result["response"]["video"].get("url")
-            elif "video_url" in result:
-                video_url = result.get("video_url")
-            elif "url" in result:
-                video_url = result.get("url")
-            elif "data" in result and len(result["data"]) > 0:
+            logger.info(f"Final result structure: {str(result)[:800]}")
+            
+            # Check various response formats based on xAI docs
+            if result.get("video", {}).get("url"):
+                video_url = result["video"]["url"]
+            elif result.get("response", {}).get("video", {}).get("url"):
+                video_url = result["response"]["video"]["url"]
+            elif result.get("video_url"):
+                video_url = result["video_url"]
+            elif result.get("url"):
+                video_url = result["url"]
+            elif result.get("data") and len(result["data"]) > 0:
                 video_base64 = result["data"][0].get("b64_json")
+                if not video_base64 and result["data"][0].get("url"):
+                    video_url = result["data"][0]["url"]
             
             if video_url:
                 video_response = await client.get(video_url)
