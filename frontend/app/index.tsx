@@ -332,10 +332,10 @@ export default function ChatScreen() {
             <Text style={styles.authRecoveryTitle}>Session needed</Text>
             <Text style={styles.authRecoverySubtitle}>Please login again or reset your session if the app got stuck.</Text>
             <View style={styles.authRecoveryActions}>
-              <TouchableOpacity style={styles.authRecoveryPrimary} onPress={() => router.replace('/login')} data-testid="auth-recovery-login-button">
+              <TouchableOpacity style={styles.authRecoveryPrimary} onPress={() => router.replace('/login')} data-testid="auth-recovery-login-button" testID="auth-recovery-login-button" dataSet={{ testid: 'auth-recovery-login-button' }}>
                 <Text style={styles.authRecoveryPrimaryText}>Go to Login</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.authRecoverySecondary} onPress={handleSessionReset} data-testid="auth-recovery-reset-button">
+              <TouchableOpacity style={styles.authRecoverySecondary} onPress={handleSessionReset} data-testid="auth-recovery-reset-button" testID="auth-recovery-reset-button" dataSet={{ testid: 'auth-recovery-reset-button' }}>
                 <Text style={styles.authRecoverySecondaryText}>Reset Session</Text>
               </TouchableOpacity>
             </View>
@@ -648,13 +648,13 @@ export default function ChatScreen() {
               <TouchableOpacity onPress={() => router.push('/search')} style={styles.headerButton}>
                 <Ionicons name="search-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowMenu(true)} onPressIn={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn">
+              <TouchableOpacity onPress={() => setShowMenu(true)} onPressIn={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn" testID="grid-menu-btn" dataSet={{ testid: 'grid-menu-btn' }}>
                 <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
               <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
                 <Ionicons name="add-circle-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-quick-logout-button">
+              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-quick-logout-button" testID="header-quick-logout-button" dataSet={{ testid: 'header-quick-logout-button' }}>
                 <Ionicons name="log-out-outline" size={24} color={METALLIC.titanium} />
               </TouchableOpacity>
             </View>
@@ -906,8 +906,8 @@ export default function ChatScreen() {
         {/* Features Menu Modal */}
         <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
           <View style={styles.menuOverlay}>
-            <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)} data-testid="menu-overlay-close" />
-            <View style={styles.menuContainer} data-testid="menu-container">
+            <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)} data-testid="menu-overlay-close" testID="menu-overlay-close" dataSet={{ testid: 'menu-overlay-close' }} />
+            <View style={styles.menuContainer} data-testid="menu-container" testID="menu-container" dataSet={{ testid: 'menu-container' }}>
               <LinearGradient
                 colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                 style={styles.menuGradient}
@@ -1080,6 +1080,8 @@ export default function ChatScreen() {
                         handleQuickLogout();
                       }}
                       data-testid="menu-logout-button"
+                      testID="menu-logout-button"
+                      dataSet={{ testid: 'menu-logout-button' }}
                     >
                       <Ionicons name="log-out-outline" size={20} color={METALLIC.danger} />
                     </TouchableOpacity>

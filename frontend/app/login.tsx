@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Pressable,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -209,11 +210,13 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.primaryButton}
+            <Pressable
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
               onPress={handleEmailAuth}
               disabled={isLoading}
               data-testid="login-submit-button"
+              testID="login-submit-button"
+              dataSet={{ testid: 'login-submit-button' }}
             >
               <LinearGradient
                 colors={[METALLIC.accent, '#8B5CF6']}
@@ -229,7 +232,7 @@ export default function LoginScreen() {
                   </Text>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </Pressable>
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
@@ -237,14 +240,14 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleAuth} data-testid="login-google-button">
+            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleAuth} data-testid="login-google-button" testID="login-google-button" dataSet={{ testid: 'login-google-button' }}>
               <View style={styles.googleIconContainer}>
                 <Ionicons name="logo-google" size={20} color="#fff" />
               </View>
               <Text style={styles.googleText}>Continue with Google</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.resetSessionButton} onPress={handleResetSession} data-testid="login-reset-session-button">
+            <TouchableOpacity style={styles.resetSessionButton} onPress={handleResetSession} data-testid="login-reset-session-button" testID="login-reset-session-button" dataSet={{ testid: 'login-reset-session-button' }}>
               <Ionicons name="refresh-circle-outline" size={16} color={METALLIC.titanium} />
               <Text style={styles.resetSessionText}>Reset Session</Text>
             </TouchableOpacity>
@@ -348,6 +351,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginTop: 8,
+  },
+  primaryButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.995 }],
   },
   buttonGradient: {
     paddingVertical: 16,

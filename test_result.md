@@ -336,7 +336,7 @@ frontend:
     implemented: true
     working: false
     file: "app/login.tsx"
-    stuck_count: 2
+    stuck_count: 3
     priority: "critical"
     needs_retesting: true
     status_history:
@@ -346,6 +346,9 @@ frontend:
       - working: false
         agent: "testing"
         comment: "CRITICAL BLOCKER CONFIRMED: Re-tested login extensively. TouchableOpacity onPress handler is NOT firing on web platform. Verified: (1) Admin secret 'forge_master_2025' is correctly loaded, (2) Email/password fields fill correctly, (3) Sign In button is found and clicked, (4) After click, localStorage forge_admin remains null after 8 seconds, (5) URL stays at /login, (6) No navigation occurs. ROOT CAUSE: TouchableOpacity with nested LinearGradient (lines 212-232 of login.tsx) does not properly handle click events on web. The onPress event is being blocked or not propagated. This is a known React Native Web issue. SOLUTION NEEDED: Replace TouchableOpacity with Pressable or add web-specific click handler. Login is completely broken on web, blocking ALL authenticated features."
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL BLOCKER PERSISTS AFTER PRESSABLE FIX: Main agent replaced TouchableOpacity with Pressable component (lines 213-235), but login STILL DOES NOT WORK. Deep debugging reveals: (1) ✓ Admin secret correctly loaded in browser as 'forge_master_2025', (2) ✓ Form fields fill correctly, (3) ✓ Button click executed without errors, (4) ✗ handleEmailAuth function NEVER executes - localStorage.setItem never called (verified with interceptor), (5) ✗ forge_admin stays null for 10+ seconds, (6) ✗ No navigation occurs, (7) ✗ DOM query for buttons returns EMPTY ARRAY after click. ROOT CAUSE: React Native Web's Pressable component is NOT properly translating onPress handler to web click events. The LinearGradient nested inside Pressable may be intercepting clicks, or Pressable is not rendering as a proper clickable element on web. URGENT: This task has been stuck for 3 attempts. Main agent MUST use WEBSEARCH TOOL to find the correct React Native Web solution for clickable buttons with nested components. Possible solutions to research: (1) Add onClick prop for web platform, (2) Use Platform.select for web-specific button implementation, (3) Use react-native-web-hooks for proper click handling, (4) Replace Pressable with a web-native button wrapper for web platform. This is a SHOW-STOPPER - app is completely unusable on web."
 
   - task: "Grid Menu and Navigation"
     implemented: true
@@ -358,6 +361,9 @@ frontend:
       - working: "NA"
         agent: "testing"
         comment: "Cannot test - blocked by login authentication failure. Code review shows grid-menu-btn, menu-container, and menu-overlay-close data-testids are present in index.tsx."
+      - working: "NA"
+        agent: "testing"
+        comment: "BLOCKED: Cannot test grid menu functionality. Login remains broken after Pressable fix attempt. Code review confirms implementation exists: (1) Grid button with data-testid='grid-menu-btn' at line 651, (2) Modal with 'Features' title at line 916, (3) Backdrop with data-testid='menu-overlay-close' at line 909. Test will be executed once login is fixed."
 
   - task: "Header Quick Logout Button"
     implemented: true
@@ -370,6 +376,9 @@ frontend:
       - working: "NA"
         agent: "testing"
         comment: "Cannot test - blocked by login authentication failure. Code review shows header-quick-logout-button data-testid present at line 657 of index.tsx."
+      - working: "NA"
+        agent: "testing"
+        comment: "BLOCKED: Cannot test logout functionality. Login remains broken after Pressable fix attempt. Code review confirms implementation: logout button with data-testid='header-quick-logout-button' at line 657 of index.tsx. Test will be executed once login is fixed."
 
   - task: "Agent List with Devin Visibility"
     implemented: true
@@ -382,6 +391,9 @@ frontend:
       - working: "NA"
         agent: "testing"
         comment: "Cannot test - blocked by login authentication failure. Code review shows agents.tsx has sorting logic to place Devin/Devon first (lines 57-63) and proper data-testids for list items."
+      - working: "NA"
+        agent: "testing"
+        comment: "BLOCKED: Cannot test Devin agent visibility. Login remains broken after Pressable fix attempt. Code review confirms implementation: agents.tsx contains proper sorting logic (lines 57-63) to place agents named 'Devin' or 'Devon' first in the list. Test will be executed once login is fixed."
 
   - task: "Features Menu Modal"
     implemented: true
@@ -426,3 +438,5 @@ agent_communication:
     message: "CRITICAL REGRESSION TEST RESULTS: Focused regression testing for session recovery, grid menu, logout, and agent list visibility reveals BLOCKING issue. Test 1 (Session Recovery) PASSED - Reset Session button exists and is clickable on login screen. Tests 2-4 BLOCKED - Login authentication completely non-functional on web. Sign In button does not trigger authentication logic when clicked. Tested multiple click methods (button selector, coordinates, Enter key) - all fail. No console errors. localStorage shows no admin status or session token after login attempt. Root cause: TouchableOpacity onPress handler in login.tsx not firing on web platform. This is a CRITICAL BLOCKER preventing all authenticated feature testing. Recommendation: Fix login button web compatibility before retesting remaining features."
   - agent: "testing"
     message: "CRITICAL BLOCKER RE-CONFIRMED - POST-FIX REGRESSION: Extensive debugging reveals login is COMPLETELY BROKEN on web platform. Test Results: (1) ✓ PASS: Reset Session button found and functional. (2) ✗ CRITICAL FAIL: Login button (lines 212-232 login.tsx) onPress handler NOT firing. Verified admin secret loaded correctly ('forge_master_2025'), form fields fill properly, button is clicked, but handleEmailAuth NEVER executes. After 8 seconds, localStorage.getItem('forge_admin') remains null. No state changes occur. (3-5) ✗ BLOCKED: Grid menu, logout, and agent list tests cannot proceed without authentication. ROOT CAUSE IDENTIFIED: TouchableOpacity with nested LinearGradient does not propagate click events on React Native Web (known platform limitation). SOLUTION REQUIRED: Replace TouchableOpacity on lines 212-232 with Pressable component, or add explicit web onClick handler. This is a SHOW-STOPPER bug - the app cannot be used on web at all. Stuck count increased to 2."
+  - agent: "testing"
+    message: "CRITICAL: LOGIN STILL BROKEN AFTER PRESSABLE FIX (Stuck Count: 3). Main agent replaced TouchableOpacity with Pressable, but login authentication STILL FAILS on web. Deep diagnostic testing with localStorage interceptors reveals: (1) ✓ Admin secret 'forge_master_2025' correctly loaded in browser, (2) ✓ Form fields fill without issues, (3) ✓ Button click executes, (4) ✗ handleEmailAuth function NEVER executes - verified by localStorage.setItem never being called, (5) ✗ forge_admin remains null for 10+ seconds, (6) ✗ DOM query for buttons returns empty array after interaction, (7) ✗ No console errors logged. ROOT CAUSE: React Native Web's Pressable component is NOT properly attaching click event handlers to the DOM. The nested LinearGradient component may be intercepting pointer events, or Pressable is not rendering as an interactive element on web. URGENT ACTION REQUIRED: Task stuck_count = 3 indicates this needs a different approach. Main agent MUST use WEBSEARCH TOOL to find React Native Web best practices for clickable components with nested elements. Research topics: (1) Platform.select for web-specific button implementations, (2) Adding explicit onClick prop alongside onPress for web, (3) Using native HTML button wrapper for web platform, (4) Pointer events and event propagation in React Native Web with LinearGradient. ALL 4 USER PAIN POINT TESTS BLOCKED by this single issue. App is completely unusable on web platform."

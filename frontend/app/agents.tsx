@@ -153,7 +153,7 @@ export default function AgentsScreen() {
             </View>
           ) : (
             agents.map((agent) => (
-              <TouchableOpacity key={agent.id} style={styles.agentCard} onPress={() => router.back()} data-testid={`agents-list-item-${agent.id}`}>
+              <TouchableOpacity key={agent.id} style={styles.agentCard} onPress={() => router.back()} data-testid={`agents-list-item-${agent.id}`} testID={`agents-list-item-${agent.id}`}>
                 <View style={[styles.agentAvatar, { backgroundColor: agent.avatar_color + '20' }]}>
                   <Ionicons name={getAvatarIcon(agent.avatar)} size={24} color={agent.avatar_color} />
                 </View>
