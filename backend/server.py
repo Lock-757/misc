@@ -2571,7 +2571,7 @@ async def generate_image(request: Request, img_request: ImageGenerationRequest, 
                 enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
 
             payload = {
-                "model": "grok-2-image",
+                "model": "grok-imagine-image",
                 "prompt": enhanced_prompt,
                 "n": 1,
                 "response_format": "b64_json"
@@ -2693,7 +2693,7 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
         }
         
         payload = {
-            "model": "grok-2-video",
+            "model": "grok-imagine-video",
             "prompt": vid_request.prompt,
             "resolution": vid_request.resolution,
             "duration": vid_request.duration,
@@ -2771,7 +2771,7 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
             "video_base64": video_base64,
             "resolution": vid_request.resolution,
             "duration": vid_request.duration,
-            "model": "grok-2-video",
+            "model": "grok-imagine-video",
             "created_at": datetime.utcnow()
         }
         await db.generated_videos.insert_one(video_record)
