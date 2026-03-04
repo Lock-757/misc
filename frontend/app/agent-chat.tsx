@@ -37,6 +37,7 @@ interface Agent {
   avatar: string;
   avatar_color: string;
   personality: string;
+  has_tools?: boolean;
 }
 
 interface ChatMessage {
@@ -170,6 +171,7 @@ export default function AgentChatScreen() {
     };
     
     setMessages(prev => [...prev, userMsg]);
+    const msgToSend = inputText.trim();
     setInputText('');
     setIsLoading(true);
     
@@ -179,16 +181,27 @@ export default function AgentChatScreen() {
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (isAdmin) headers['X-Admin-Key'] = 'forge_master_2025';
       
-      const res = await axios.post(`${API_URL}/api/chat`, {
+      // Check if agent has tools enabled - use agentic endpoint
+      const hasTools = selectedAgent.has_tools || selectedAgent.name === 'Devin';
+      const endpoint = hasTools ? '/api/agentic-chat' : '/api/chat';
+      
+      const res = await axios.post(`${API_URL}${endpoint}`, {
         agent_id: selectedAgent.id,
-        message: inputText.trim(),
+        message: msgToSend,
         user_id: user?.user_id || 'guest',
       }, { headers });
+      
+      let responseContent = res.data.message.content;
+      
+      // If tool results exist, append them
+      if (res.data.tool_results && res.data.tool_results.length > 0) {
+        responseContent += '\n\n---\n**Tool Executions:** ' + res.data.iterations + ' iterations';
+      }
       
       const assistantMsg: ChatMessage = {
         id: res.data.message.id,
         role: 'assistant',
-        content: res.data.message.content,
+        content: responseContent,
         agent_name: selectedAgent.name,
         agent_color: selectedAgent.avatar_color,
         timestamp: new Date().toISOString(),

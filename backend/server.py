@@ -17,6 +17,268 @@ import base64
 import asyncio
 import re
 import hashlib
+import subprocess
+import xml.etree.ElementTree as ET
+from io import StringIO
+
+# ==================== AGENT TOOL EXECUTION ENGINE ====================
+
+WORKSPACE_DIR = "/app"  # Restricted workspace for agent file operations
+
+def parse_tool_calls(response_text: str) -> list:
+    """Extract XML tool calls from agent response."""
+    tools = []
+    
+    # Patterns to find XML tool tags
+    patterns = [
+        (r'<think>(.*?)</think>', 'think'),
+        (r'<shell[^>]*>(.*?)</shell>', 'shell'),
+        (r'<open_file[^>]*/>', 'open_file'),
+        (r'<create_file[^>]*>(.*?)</create_file>', 'create_file'),
+        (r'<str_replace[^>]*>.*?</str_replace>', 'str_replace'),
+        (r'<find_filecontent[^>]*/>', 'find_filecontent'),
+        (r'<find_filename[^>]*/>', 'find_filename'),
+        (r'<message_user[^>]*>(.*?)</message_user>', 'message_user'),
+    ]
+    
+    for pattern, tool_type in patterns:
+        matches = re.finditer(pattern, response_text, re.DOTALL)
+        for match in matches:
+            tools.append({
+                'type': tool_type,
+                'raw': match.group(0),
+                'content': match.group(1) if match.lastindex else None,
+                'start': match.start(),
+                'end': match.end()
+            })
+    
+    # Sort by position in text
+    tools.sort(key=lambda x: x['start'])
+    return tools
+
+def extract_xml_attrs(xml_str: str) -> dict:
+    """Extract attributes from an XML tag string."""
+    attrs = {}
+    # Match attr="value" or attr='value'
+    attr_pattern = r'(\w+)=["\']([^"\']*)["\']'
+    for match in re.finditer(attr_pattern, xml_str):
+        attrs[match.group(1)] = match.group(2)
+    return attrs
+
+async def execute_tool(tool: dict) -> str:
+    """Execute a single tool and return the result."""
+    tool_type = tool['type']
+    raw = tool['raw']
+    content = tool.get('content', '')
+    
+    try:
+        if tool_type == 'think':
+            # Think tool just captures thoughts, no execution
+            return f"[Thought recorded]"
+        
+        elif tool_type == 'shell':
+            attrs = extract_xml_attrs(raw)
+            exec_dir = attrs.get('exec_dir', WORKSPACE_DIR)
+            
+            # Security: restrict to workspace
+            if not exec_dir.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot execute outside workspace {WORKSPACE_DIR}]"
+            
+            # Execute with timeout
+            try:
+                result = subprocess.run(
+                    content.strip(),
+                    shell=True,
+                    cwd=exec_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                output = result.stdout + result.stderr
+                if len(output) > 2000:
+                    output = output[:2000] + "\n... [truncated]"
+                return f"[Shell Output]\n{output}\n[Exit code: {result.returncode}]"
+            except subprocess.TimeoutExpired:
+                return "[Error: Command timed out after 30 seconds]"
+        
+        elif tool_type == 'open_file':
+            attrs = extract_xml_attrs(raw)
+            path = attrs.get('path', '')
+            start_line = int(attrs.get('start_line', 1))
+            end_line = int(attrs.get('end_line', start_line + 100))
+            
+            # Security check
+            if not path.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot read files outside workspace]"
+            
+            try:
+                with open(path, 'r') as f:
+                    lines = f.readlines()
+                    selected = lines[start_line-1:end_line]
+                    content = ''.join(f"{start_line+i}: {line}" for i, line in enumerate(selected))
+                    if len(content) > 3000:
+                        content = content[:3000] + "\n... [truncated]"
+                    return f"[File: {path}]\n{content}"
+            except FileNotFoundError:
+                return f"[Error: File not found: {path}]"
+            except Exception as e:
+                return f"[Error reading file: {str(e)}]"
+        
+        elif tool_type == 'create_file':
+            attrs = extract_xml_attrs(raw)
+            path = attrs.get('path', '')
+            
+            if not path.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot create files outside workspace]"
+            
+            try:
+                # Create directories if needed
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'w') as f:
+                    f.write(content)
+                return f"[Created file: {path}]"
+            except Exception as e:
+                return f"[Error creating file: {str(e)}]"
+        
+        elif tool_type == 'str_replace':
+            attrs = extract_xml_attrs(raw)
+            path = attrs.get('path', '')
+            
+            if not path.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot edit files outside workspace]"
+            
+            # Extract old_str and new_str
+            old_match = re.search(r'<old_str>(.*?)</old_str>', raw, re.DOTALL)
+            new_match = re.search(r'<new_str>(.*?)</new_str>', raw, re.DOTALL)
+            
+            if not old_match or not new_match:
+                return "[Error: Missing old_str or new_str tags]"
+            
+            old_str = old_match.group(1)
+            new_str = new_match.group(1)
+            
+            try:
+                with open(path, 'r') as f:
+                    file_content = f.read()
+                
+                if old_str not in file_content:
+                    return f"[Error: old_str not found in {path}]"
+                
+                new_content = file_content.replace(old_str, new_str, 1)
+                with open(path, 'w') as f:
+                    f.write(new_content)
+                
+                return f"[Edited file: {path}]"
+            except Exception as e:
+                return f"[Error editing file: {str(e)}]"
+        
+        elif tool_type == 'find_filecontent':
+            attrs = extract_xml_attrs(raw)
+            path = attrs.get('path', WORKSPACE_DIR)
+            regex = attrs.get('regex', '')
+            
+            if not path.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot search outside workspace]"
+            
+            try:
+                result = subprocess.run(
+                    f'grep -rn "{regex}" --include="*.py" --include="*.tsx" --include="*.ts" --include="*.js" {path} | head -30',
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                output = result.stdout or "No matches found"
+                if len(output) > 2000:
+                    output = output[:2000] + "\n... [truncated]"
+                return f"[Search results for '{regex}']\n{output}"
+            except Exception as e:
+                return f"[Error searching: {str(e)}]"
+        
+        elif tool_type == 'find_filename':
+            attrs = extract_xml_attrs(raw)
+            path = attrs.get('path', WORKSPACE_DIR)
+            glob = attrs.get('glob', '*')
+            
+            if not path.startswith(WORKSPACE_DIR):
+                return f"[Error: Cannot search outside workspace]"
+            
+            try:
+                result = subprocess.run(
+                    f'find {path} -name "{glob}" -type f | head -30',
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                output = result.stdout or "No files found"
+                return f"[Files matching '{glob}']\n{output}"
+            except Exception as e:
+                return f"[Error finding files: {str(e)}]"
+        
+        elif tool_type == 'message_user':
+            # Just return the message content
+            return f"[Agent Message]: {content}"
+        
+        else:
+            return f"[Unknown tool type: {tool_type}]"
+    
+    except Exception as e:
+        return f"[Tool execution error: {str(e)}]"
+
+async def run_agent_with_tools(agent_prompt: str, user_message: str, max_iterations: int = 5) -> dict:
+    """Run an agent with tool execution capabilities."""
+    messages = [
+        {"role": "system", "content": agent_prompt},
+        {"role": "user", "content": user_message}
+    ]
+    
+    full_response = ""
+    tool_results = []
+    iterations = 0
+    
+    while iterations < max_iterations:
+        iterations += 1
+        
+        # Get agent response
+        response = await grok_client.chat.completions.create(
+            model="grok-3",
+            messages=messages,
+            max_tokens=4000,
+            temperature=0.7
+        )
+        
+        agent_response = response.choices[0].message.content
+        full_response += agent_response + "\n"
+        
+        # Parse tool calls
+        tools = parse_tool_calls(agent_response)
+        
+        if not tools:
+            # No tools, agent is done
+            break
+        
+        # Execute tools
+        tool_output = ""
+        for tool in tools:
+            result = await execute_tool(tool)
+            tool_results.append({
+                'tool': tool['type'],
+                'result': result[:500]  # Truncate for storage
+            })
+            tool_output += f"\n{result}\n"
+        
+        # Add tool results to conversation
+        messages.append({"role": "assistant", "content": agent_response})
+        messages.append({"role": "user", "content": f"Tool execution results:\n{tool_output}\n\nContinue with your task."})
+    
+    return {
+        "response": full_response,
+        "tool_results": tool_results,
+        "iterations": iterations
+    }
+
+
 import secrets
 
 ROOT_DIR = Path(__file__).parent
@@ -2448,6 +2710,107 @@ async def track_download(request: Request, body: DownloadTrackRequest, session_t
     }
     await db.download_logs.insert_one(log)
     return {"status": "logged"}
+
+# ==================== AGENTIC CHAT ENDPOINT ====================
+
+class AgenticChatRequest(BaseModel):
+    agent_id: str
+    message: str
+    user_id: str = "guest"
+
+@api_router.post("/agentic-chat")
+async def agentic_chat(body: AgenticChatRequest, request: Request):
+    """Chat with an agent that can execute real tools."""
+    if not grok_client:
+        raise HTTPException(status_code=500, detail="Grok API not configured")
+    
+    # Get agent
+    agent = await db.agents.find_one({"id": body.agent_id})
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    agent_prompt = agent.get("system_prompt", "You are a helpful assistant.")
+    
+    # Check if agent has tool execution enabled
+    has_tools = agent.get("has_tools", False)
+    
+    if has_tools:
+        # Run with tool execution
+        result = await run_agent_with_tools(agent_prompt, body.message, max_iterations=5)
+        
+        # Store conversation
+        conv_id = str(uuid.uuid4())
+        conv = {
+            "id": conv_id,
+            "user_id": body.user_id,
+            "agent_id": body.agent_id,
+            "messages": [
+                {"role": "user", "content": body.message},
+                {"role": "assistant", "content": result["response"]}
+            ],
+            "tool_results": result["tool_results"],
+            "iterations": result["iterations"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.agentic_conversations.insert_one(conv)
+        
+        return {
+            "conversation_id": conv_id,
+            "message": {
+                "id": str(uuid.uuid4()),
+                "role": "assistant",
+                "content": result["response"],
+            },
+            "tool_results": result["tool_results"],
+            "iterations": result["iterations"]
+        }
+    else:
+        # Regular chat without tools
+        response = await grok_client.chat.completions.create(
+            model="grok-3",
+            messages=[
+                {"role": "system", "content": agent_prompt},
+                {"role": "user", "content": body.message}
+            ],
+            max_tokens=2000,
+            temperature=0.8
+        )
+        
+        return {
+            "message": {
+                "id": str(uuid.uuid4()),
+                "role": "assistant",
+                "content": response.choices[0].message.content,
+            }
+        }
+
+# Endpoint to create tool-enabled agent
+class CreateToolAgentRequest(BaseModel):
+    name: str
+    system_prompt: str
+    description: str = ""
+    avatar_color: str = "#8B5CF6"
+
+@api_router.post("/agents/create-tool-agent")
+async def create_tool_agent(body: CreateToolAgentRequest):
+    """Create an agent with tool execution capabilities."""
+    agent_id = str(uuid.uuid4())
+    agent = {
+        "id": agent_id,
+        "name": body.name,
+        "system_prompt": body.system_prompt,
+        "description": body.description,
+        "avatar": body.name[0].upper(),
+        "avatar_color": body.avatar_color,
+        "personality": "tool-enabled autonomous agent",
+        "tools": [],
+        "balance": 100.0,
+        "has_tools": True,  # Flag for tool execution
+        "status": "active",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.agents.insert_one(agent)
+    return {"id": agent_id, "name": body.name, "status": "created"}
 
 # ==================== ADMIN ENDPOINTS ====================
 
