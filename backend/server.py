@@ -65,6 +65,11 @@ def parse_tool_calls(response_text: str) -> list:
         (r'<propose_edit[^>]*>(.*?)</propose_edit>', 'propose_edit'),
         (r'<create_sub_agent[^>]*>(.*?)</create_sub_agent>', 'create_sub_agent'),
         (r'<self_improve>(.*?)</self_improve>', 'self_improve'),
+        # Memory tools
+        (r'<save_memory[^>]*>(.*?)</save_memory>', 'save_memory'),
+        (r'<recall_memories\s*/>', 'recall_memories'),
+        (r'<share_knowledge[^>]*>(.*?)</share_knowledge>', 'share_knowledge'),
+        (r'<get_shared_knowledge\s*/>', 'get_shared_knowledge'),
     ]
     
     for pattern, tool_type in patterns:
@@ -269,6 +274,68 @@ async def execute_tool(tool: dict, agent_id: str = None) -> str:
                 return f"[Error: Agent {target_id} not found]"
             
             return f"[Agent Details]\nName: {agent['name']}\nPersonality: {agent.get('personality', 'N/A')}\nHas Tools: {agent.get('has_tools', False)}\nPrompt Preview: {agent.get('system_prompt', '')[:500]}..."
+        
+        elif tool_type == 'save_memory':
+            # Save a memory to long-term storage
+            attrs = extract_xml_attrs(raw)
+            category = attrs.get('category', 'general')
+            
+            if not agent_id:
+                return "[Error: No agent context for saving memory]"
+            
+            memory = {
+                "id": str(uuid.uuid4()),
+                "agent_id": agent_id,
+                "content": content,
+                "category": category,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.agent_memories.insert_one(memory)
+            return f"[Memory saved: {content[:100]}...]"
+        
+        elif tool_type == 'recall_memories':
+            # Recall memories from long-term storage
+            if not agent_id:
+                return "[Error: No agent context for recalling memories]"
+            
+            memories = await db.agent_memories.find(
+                {"agent_id": agent_id},
+                {"_id": 0}
+            ).sort("created_at", -1).to_list(10)
+            
+            if not memories:
+                return "[No memories found]"
+            
+            memory_list = "\n".join([f"- [{m['category']}] {m['content']}" for m in memories])
+            return f"[Your Memories]\n{memory_list}"
+        
+        elif tool_type == 'share_knowledge':
+            # Share knowledge with other agents (Collective Memory)
+            attrs = extract_xml_attrs(raw)
+            target_agent = attrs.get('target', 'all')
+            
+            knowledge = {
+                "id": str(uuid.uuid4()),
+                "from_agent_id": agent_id,
+                "target": target_agent,  # 'all' or specific agent_id
+                "content": content,
+                "shared_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.collective_knowledge.insert_one(knowledge)
+            return f"[Knowledge shared with {target_agent}: {content[:100]}...]"
+        
+        elif tool_type == 'get_shared_knowledge':
+            # Get knowledge shared by other agents
+            knowledge = await db.collective_knowledge.find(
+                {"$or": [{"target": "all"}, {"target": agent_id}]},
+                {"_id": 0}
+            ).sort("shared_at", -1).to_list(10)
+            
+            if not knowledge:
+                return "[No shared knowledge found]"
+            
+            knowledge_list = "\n".join([f"- From {k['from_agent_id'][:8]}: {k['content']}" for k in knowledge])
+            return f"[Shared Knowledge]\n{knowledge_list}"
         
         elif tool_type == 'propose_edit':
             # Propose an edit that requires approval
@@ -2308,6 +2375,11 @@ When you use a cognitive tool, show your thinking process briefly, then provide 
             memory_context = "\n".join([f"- {m['content']}" for m in memories])
             system_prompt += f"\n\nRelevant memories about this user:\n{memory_context}"
     
+    # Add agent's long-term memories
+    agent_memories = await get_memories_for_context(request.agent_id)
+    if agent_memories:
+        system_prompt += agent_memories
+    
     system_prompt += f"\n\nYour personality: {agent_config.personality}"
     
     # Add agent-specific tools to the system prompt
@@ -2954,6 +3026,83 @@ async def create_tool_agent(body: CreateToolAgentRequest):
     }
     await db.agents.insert_one(agent)
     return {"id": agent_id, "name": body.name, "status": "created"}
+
+# ==================== AGENT MEMORY SYSTEM ====================
+
+class MemoryEntry(BaseModel):
+    content: str
+    category: str = "general"  # general, fact, preference, context
+
+@api_router.get("/agents/{agent_id}/memories")
+async def get_agent_memories(agent_id: str, limit: int = 50):
+    """Get an agent's long-term memories."""
+    memories = await db.agent_memories.find(
+        {"agent_id": agent_id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(limit)
+    return memories
+
+@api_router.post("/agents/{agent_id}/memories")
+async def add_agent_memory(agent_id: str, body: MemoryEntry):
+    """Add a memory for an agent."""
+    memory = {
+        "id": str(uuid.uuid4()),
+        "agent_id": agent_id,
+        "content": body.content,
+        "category": body.category,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.agent_memories.insert_one(memory)
+    return {"id": memory["id"], "status": "saved"}
+
+@api_router.delete("/agents/{agent_id}/memories/{memory_id}")
+async def delete_agent_memory(agent_id: str, memory_id: str):
+    """Delete a specific memory."""
+    result = await db.agent_memories.delete_one({"id": memory_id, "agent_id": agent_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"status": "deleted"}
+
+# Helper to get memories for chat context
+async def get_memories_for_context(agent_id: str, limit: int = 10) -> str:
+    """Get formatted memories for including in chat context."""
+    memories = await db.agent_memories.find(
+        {"agent_id": agent_id},
+        {"_id": 0, "content": 1, "category": 1}
+    ).sort("created_at", -1).to_list(limit)
+    
+    if not memories:
+        return ""
+    
+    memory_text = "\n\n[LONG-TERM MEMORIES]\n"
+    for m in memories:
+        memory_text += f"- [{m['category']}] {m['content']}\n"
+    return memory_text
+
+# ==================== EXPORT CONVERSATIONS ====================
+
+@api_router.get("/conversations/{conv_id}/export")
+async def export_conversation(conv_id: str, format: str = "markdown"):
+    """Export a conversation as markdown or JSON."""
+    conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if format == "json":
+        return conv
+    
+    # Markdown format
+    md = f"# Conversation Export\n\n"
+    md += f"**Date**: {conv.get('created_at', 'Unknown')}\n"
+    md += f"**Agent**: {conv.get('agent_id', 'Unknown')}\n\n"
+    md += "---\n\n"
+    
+    for msg in conv.get("messages", []):
+        role = msg.get("role", "unknown").upper()
+        content = msg.get("content", "")
+        md += f"**{role}**:\n{content}\n\n"
+    
+    return {"markdown": md, "conversation_id": conv_id}
 
 # ==================== PENDING CHANGES APPROVAL SYSTEM ====================
 

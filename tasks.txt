@@ -1,0 +1,6 @@
+Optimize a piece of code in the project.
+Write documentation for a recent feature.
+Create a new utility script for automation.
+Review and debug an existing module.
+Propose a new feature or improvement for the system.
+Test a new feature implementation.

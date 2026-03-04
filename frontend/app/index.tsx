@@ -93,6 +93,9 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [availableAgents, setAvailableAgents] = useState<any[]>([]);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
   
   // Voice states
   const [isRecording, setIsRecording] = useState(false);
@@ -166,6 +169,8 @@ export default function ChatScreen() {
       loadData();
       startAnimations();
       setupAudio();
+      loadPendingApprovals();
+      loadAvailableAgents();
     }
     return () => {
       if (recording) {
@@ -173,6 +178,27 @@ export default function ChatScreen() {
       }
     };
   }, [isAuthenticated]);
+
+  const loadPendingApprovals = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/pending-changes`);
+      setPendingApprovalsCount(res.data?.length || 0);
+    } catch (e) {}
+  };
+
+  const loadAvailableAgents = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/agents`);
+      setAvailableAgents(res.data || []);
+    } catch (e) {}
+  };
+
+  const switchToAgent = async (newAgent: any) => {
+    setAgent(newAgent);
+    setShowAgentPicker(false);
+    setMessages([]);
+    setConversationId(null);
+  };
 
   // Handle conversation resumption from history
   useEffect(() => {
@@ -564,7 +590,10 @@ export default function ChatScreen() {
                 </LinearGradient>
               </Animated.View>
               <View style={styles.agentTextContainer}>
-                <Text style={styles.agentName}>{agent.name}</Text>
+                <TouchableOpacity onPress={() => setShowAgentPicker(true)} style={styles.agentNameRow}>
+                  <Text style={styles.agentName}>{agent.name}</Text>
+                  <Ionicons name="chevron-down" size={16} color={METALLIC.silver} style={{marginLeft: 4}} />
+                </TouchableOpacity>
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>Online</Text>
@@ -781,6 +810,39 @@ export default function ChatScreen() {
           </View>
         </KeyboardAvoidingView>
 
+        {/* Agent Picker Modal */}
+        <Modal visible={showAgentPicker} transparent animationType="fade">
+          <TouchableOpacity 
+            style={styles.menuOverlay} 
+            activeOpacity={1} 
+            onPress={() => setShowAgentPicker(false)}
+          >
+            <View style={styles.agentPickerContainer}>
+              <Text style={styles.agentPickerTitle}>Switch Agent</Text>
+              <ScrollView style={styles.agentPickerList}>
+                {availableAgents.map((a) => (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[styles.agentPickerItem, agent?.id === a.id && styles.agentPickerItemActive]}
+                    onPress={() => switchToAgent(a)}
+                  >
+                    <View style={[styles.agentPickerAvatar, { backgroundColor: a.avatar_color || '#8B5CF6' }]}>
+                      <Text style={styles.agentPickerAvatarText}>{a.name?.[0] || '?'}</Text>
+                    </View>
+                    <View style={styles.agentPickerInfo}>
+                      <Text style={styles.agentPickerName}>{a.name}</Text>
+                      <Text style={styles.agentPickerType}>{a.has_tools ? 'Tool Agent' : 'Chat Agent'}</Text>
+                    </View>
+                    {agent?.id === a.id && (
+                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* Features Menu Modal */}
         <Modal visible={showMenu} transparent animationType="fade">
           <TouchableOpacity 
@@ -900,6 +962,11 @@ export default function ChatScreen() {
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/approvals'); }} data-testid="menu-approvals">
                       <View style={[styles.menuIcon, { backgroundColor: '#EF4444' + '20' }]}>
                         <Ionicons name="shield-checkmark" size={22} color="#EF4444" />
+                        {pendingApprovalsCount > 0 && (
+                          <View style={styles.notificationBadge}>
+                            <Text style={styles.notificationBadgeText}>{pendingApprovalsCount}</Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.menuLabel}>Approvals</Text>
                     </TouchableOpacity>
@@ -1207,6 +1274,85 @@ const styles = StyleSheet.create({
     color: METALLIC.silver,
     textAlign: 'center',
     marginTop: 6,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  agentNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  agentPickerContainer: {
+    backgroundColor: METALLIC.darkSteel,
+    borderRadius: 16,
+    padding: 16,
+    width: '85%',
+    maxHeight: '70%',
+    alignSelf: 'center',
+    marginTop: 100,
+  },
+  agentPickerTitle: {
+    color: METALLIC.chrome,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  agentPickerList: {
+    maxHeight: 400,
+  },
+  agentPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  agentPickerItemActive: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+  },
+  agentPickerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentPickerAvatarText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  agentPickerInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  agentPickerName: {
+    color: METALLIC.chrome,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  agentPickerType: {
+    color: METALLIC.titanium,
+    fontSize: 12,
+    marginTop: 2,
   },
   userCard: {
     flexDirection: 'row',
