@@ -902,6 +902,12 @@ export default function ChatScreen() {
                       </View>
                       <Text style={styles.menuLabel}>Agent Chat</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/approvals'); }} data-testid="menu-approvals">
+                      <View style={[styles.menuIcon, { backgroundColor: '#EF4444' + '20' }]}>
+                        <Ionicons name="shield-checkmark" size={22} color="#EF4444" />
+                      </View>
+                      <Text style={styles.menuLabel}>Approvals</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents-dashboard'); }} data-testid="menu-agents-dashboard">
                       <View style={[styles.menuIcon, { backgroundColor: '#10B981' + '20' }]}>
                         <Ionicons name="people" size={22} color="#10B981" />
