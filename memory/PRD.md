@@ -88,6 +88,16 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - **Data Display**: Dashboard now fetches and displays Journal entries, Goals (with progress bars), Reputation scores, and Specializations for each agent
 - **Backend endpoints verified**: `/api/agents/{id}/journal`, `/api/agents/{id}/goals`, `/api/agents/{id}/reputation`, `/api/agents/{id}/specializations`
 
+### Session 6 (2026-03-04) — Grok Video Fix + Chat Keyboard Stability
+- **Grok video generation fixed**: Hardened `/api/generate-video` polling/parser logic in `backend/server.py` to support multiple provider response structures (including `status: done` + `video` URL string/object) and prevent "No video data in response" regression.
+- **Mobile keyboard spacing improvements**:
+  - Main chat (`frontend/app/index.tsx`): safe-area aware bottom spacing and keyboard offset tuning for input/send row.
+  - Agent chat (`frontend/app/agentchat.tsx`): added `KeyboardAvoidingView` + safe-area aware input row spacing.
+- **Testability improvements**: Added/expanded `data-testid` coverage on key chat controls touched in this fix batch.
+- **Verification**:
+  - Manual curl confirmed `/api/generate-video` returns `200` with non-empty `video_base64`.
+  - Testing agent report `iteration_4.json` passed targeted backend/frontend regressions (video, grid menu, mobile input visibility).
+
 ### Session 4 (2026-03-02) — HD Video Generation & Cognitive Tools System
 - **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
   - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
@@ -129,9 +139,12 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 
 ### P0 — Critical
 - [x] HD Video Generation (Sora 2) — COMPLETED Session 4
+- [x] Grok video generation regression (`no data returned`) — FIXED Session 6
+- [x] Grid menu visibility/clickability regression check — VERIFIED Session 6
 - [ ] Verify production deployment shows app correctly after `output:single` change
 
 ### P1 — High Priority
+- [ ] Keyboard overlap audit for remaining screens beyond main chat + agent chat (if user reports specific screen)
 - [ ] Voice-to-text on main chat screen (user request, deferred for cost assessment)
 - [ ] Integrate Claude API (placeholder exists)
 - [ ] Integrate Kimi LLM API (placeholder exists)
