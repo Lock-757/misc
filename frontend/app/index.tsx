@@ -914,7 +914,7 @@ export default function ChatScreen() {
         <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
           <View style={styles.menuOverlay}>
             <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)} data-testid="menu-overlay-close" testID="menu-overlay-close" dataSet={{ testid: 'menu-overlay-close' }} />
-            <View style={styles.menuContainer} data-testid="menu-container" testID="menu-container" dataSet={{ testid: 'menu-container' }}>
+            <View style={[styles.menuContainer, { paddingBottom: Math.max(insets.bottom, 10) }]} data-testid="menu-container" testID="menu-container" dataSet={{ testid: 'menu-container' }}>
               <LinearGradient
                 colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
                 style={styles.menuGradient}
@@ -1361,7 +1361,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   menuContainer: {
-    maxHeight: height * 0.8,
+    height: Math.min(height * 0.86, 760),
+    minHeight: Math.min(height * 0.68, 520),
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
