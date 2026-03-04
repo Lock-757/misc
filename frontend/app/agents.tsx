@@ -150,7 +150,7 @@ export default function AgentsScreen() {
                 </View>
                 <View style={styles.agentInfo}>
                   <Text style={styles.agentName}>{agent.name}</Text>
-                  <Text style={styles.agentModel}>{agent.model?.split('-')[0] || 'grok'}</Text>
+                  <Text style={styles.agentModel}>{agent.has_tools ? 'Tool Agent' : 'Chat Agent'}</Text>
                 </View>
                 <TouchableOpacity style={styles.deleteButton} onPress={() => deleteAgent(agent.id)}>
                   <Ionicons name="trash-outline" size={18} color={METALLIC.titanium} />

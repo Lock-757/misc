@@ -221,19 +221,6 @@ export default function SettingsScreen() {
                 </View>
               </LinearGradient>
               <Text style={styles.previewName}>{name || 'Agent'}</Text>
-              <View style={styles.previewBadges}>
-                <View style={styles.previewBadge}>
-                  <Text style={styles.previewModel}>
-                    {MODELS.find(m => m.id === model)?.label || 'Grok'}
-                  </Text>
-                </View>
-                {adultMode && (
-                  <View style={[styles.previewBadge, styles.adultBadge]}>
-                    <Ionicons name="warning" size={10} color={METALLIC.danger} />
-                    <Text style={styles.adultBadgeText}>18+</Text>
-                  </View>
-                )}
-              </View>
             </View>
 
             {/* Name */}

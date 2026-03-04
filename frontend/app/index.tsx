@@ -567,12 +567,7 @@ export default function ChatScreen() {
                 <Text style={styles.agentName}>{agent.name}</Text>
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
-                  <Text style={styles.statusText}>{agent.model.split('-')[0]}</Text>
-                  {agent.adult_mode === true && !isAdmin && (
-                    <View style={styles.adultBadgeSmall}>
-                      <Text style={styles.adultBadgeText}>18+</Text>
-                    </View>
-                  )}
+                  <Text style={styles.statusText}>Online</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -581,7 +576,7 @@ export default function ChatScreen() {
               <TouchableOpacity onPress={() => router.push('/search')} style={styles.headerButton}>
                 <Ionicons name="search-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerButton}>
+              <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn">
                 <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
               </TouchableOpacity>
               <TouchableOpacity onPress={clearChat} style={styles.headerButton}>

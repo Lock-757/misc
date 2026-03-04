@@ -229,12 +229,6 @@ export default function ImageGenScreen() {
                 <Ionicons name="shield" size={20} color={bypassFilters ? METALLIC.danger : METALLIC.warning} />
               </TouchableOpacity>
             )}
-            {agent?.adult_mode && !isAdmin && (
-              <View style={styles.adultBadge}>
-                <Ionicons name="warning" size={12} color={METALLIC.danger} />
-                <Text style={styles.adultText}>18+</Text>
-              </View>
-            )}
           </View>
         </View>
 
