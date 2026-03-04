@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 import json
 import httpx
 import base64
+import asyncio
 import re
 import hashlib
 import secrets
