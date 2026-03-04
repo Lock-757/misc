@@ -22,7 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import axios from 'axios';
@@ -78,6 +78,7 @@ const METALLIC = {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ conversationId?: string; agentId?: string }>();
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -619,7 +620,7 @@ export default function ChatScreen() {
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.chatContainer}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : Math.max(insets.bottom, 12)}
         >
           <ScrollView
             ref={scrollViewRef}
@@ -764,7 +765,18 @@ export default function ChatScreen() {
           </ScrollView>
 
           {/* Input */}
-          <View style={styles.inputWrapper}>
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                paddingBottom:
+                  Platform.OS === 'ios'
+                    ? Math.max(insets.bottom, 8)
+                    : Math.max(insets.bottom, 14),
+              },
+            ]}
+            data-testid="main-chat-input-wrapper"
+          >
             <LinearGradient
               colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
               style={styles.inputGradient}
@@ -773,6 +785,7 @@ export default function ChatScreen() {
                 <TouchableOpacity 
                   style={[styles.inputIcon, isRecording && styles.inputIconRecording]} 
                   onPress={isRecording ? stopRecording : startRecording}
+                  data-testid="main-chat-voice-toggle-button"
                 >
                   <Ionicons 
                     name={isRecording ? "stop-circle" : "mic-outline"} 
@@ -789,6 +802,7 @@ export default function ChatScreen() {
                   multiline
                   maxLength={2000}
                   editable={!isRecording}
+                  data-testid="main-chat-message-input"
                 />
                 <TouchableOpacity
                   style={[
@@ -797,6 +811,7 @@ export default function ChatScreen() {
                   ]}
                   onPress={sendMessage}
                   disabled={!inputText.trim() || isLoading}
+                  data-testid="main-chat-send-button"
                 >
                   <LinearGradient
                     colors={inputText.trim() ? [METALLIC.accent, '#4F46E5'] : [METALLIC.gunmetal, METALLIC.darkSteel]}

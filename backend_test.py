@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 import sys
 
 # Backend API URL from frontend environment
-BACKEND_URL = "https://multi-agent-hub-24.preview.emergentagent.com/api"
+BACKEND_URL = "https://aurora-forge-1.preview.emergentagent.com/api"
 
 class AgentForgeAPITester:
     def __init__(self, base_url: str):

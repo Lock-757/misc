@@ -2687,6 +2687,47 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
         raise HTTPException(status_code=400, detail="Duration must be between 6 and 15 seconds")
 
     try:
+        def extract_video_url_from_result(payload: Any) -> Optional[str]:
+            if not isinstance(payload, dict):
+                return None
+
+            video_field = payload.get("video")
+            if isinstance(video_field, str) and video_field.strip():
+                return video_field
+            if isinstance(video_field, dict):
+                video_url = video_field.get("url")
+                if isinstance(video_url, str) and video_url.strip():
+                    return video_url
+
+            response_field = payload.get("response")
+            if isinstance(response_field, dict):
+                response_video = response_field.get("video")
+                if isinstance(response_video, str) and response_video.strip():
+                    return response_video
+                if isinstance(response_video, dict):
+                    response_video_url = response_video.get("url")
+                    if isinstance(response_video_url, str) and response_video_url.strip():
+                        return response_video_url
+
+                response_url = response_field.get("url")
+                if isinstance(response_url, str) and response_url.strip():
+                    return response_url
+
+            for key in ["video_url", "url"]:
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+
+            data_field = payload.get("data")
+            if isinstance(data_field, list) and data_field:
+                first_item = data_field[0]
+                if isinstance(first_item, dict):
+                    item_url = first_item.get("url")
+                    if isinstance(item_url, str) and item_url.strip():
+                        return item_url
+
+            return None
+
         headers = {
             "Authorization": f"Bearer {GROK_API_KEY}",
             "Content-Type": "application/json"
@@ -2738,12 +2779,20 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
                     elif status_response.status_code == 200:
                         result = status_response.json()
                         logger.info(f"Poll result: {str(result)[:500]}")
-                        # Check if status is "done"
-                        if result.get("status") == "done":
+
+                        status = str(result.get("status", "")).lower()
+                        if status in ["failed", "error", "cancelled"]:
+                            raise HTTPException(status_code=500, detail="Video generation failed on provider")
+                        if status in ["pending", "queued", "processing", "running", "in_progress"]:
+                            continue
+
+                        if status == "done":
                             break
-                        # Also check for video url directly
-                        if result.get("video") or result.get("url"):
+
+                        # Some responses may not include status but do include a ready URL
+                        if extract_video_url_from_result(result):
                             break
+
                         continue
                     else:
                         logger.warning(f"Poll got status {status_response.status_code}: {status_response.text[:200]}")
@@ -2751,25 +2800,18 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
                 else:
                     raise HTTPException(status_code=500, detail="Video generation timed out")
             
-            # Get the video URL/data from response - check multiple possible structures
-            video_url = None
+            # Get the video URL/data from response - handle multiple structures
+            video_url = extract_video_url_from_result(result)
             video_base64 = None
             
             logger.info(f"Final result structure: {str(result)[:800]}")
             
-            # Check various response formats based on xAI docs
-            if result.get("video", {}).get("url"):
-                video_url = result["video"]["url"]
-            elif result.get("response", {}).get("video", {}).get("url"):
-                video_url = result["response"]["video"]["url"]
-            elif result.get("video_url"):
-                video_url = result["video_url"]
-            elif result.get("url"):
-                video_url = result["url"]
-            elif result.get("data") and len(result["data"]) > 0:
-                video_base64 = result["data"][0].get("b64_json")
-                if not video_base64 and result["data"][0].get("url"):
-                    video_url = result["data"][0]["url"]
+            if isinstance(result, dict):
+                result_data = result.get("data")
+                if isinstance(result_data, list) and result_data:
+                    first_item = result_data[0]
+                    if isinstance(first_item, dict):
+                        video_base64 = first_item.get("b64_json")
             
             if video_url:
                 video_response = await client.get(video_url)

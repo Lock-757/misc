@@ -8,11 +8,13 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import axios from 'axios';
 import { useAuth, getStoredToken } from '../context/AuthContext';
 
@@ -60,6 +62,7 @@ interface AgentMessage {
 
 export default function AgentChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const { user, isAdmin } = useAuth();
   
@@ -282,11 +285,11 @@ export default function AgentChatScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} data-testid="agent-chat-back-button">
             <Ionicons name="chevron-back" size={24} color={C.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Agent Chat</Text>
-          <TouchableOpacity onPress={loadAllAgentMessages} style={styles.refreshBtn}>
+          <TouchableOpacity onPress={loadAllAgentMessages} style={styles.refreshBtn} data-testid="agent-chat-refresh-button">
             <Ionicons name="refresh" size={22} color={C.accent} />
           </TouchableOpacity>
         </View>
@@ -296,6 +299,7 @@ export default function AgentChatScreen() {
           <TouchableOpacity
             style={[styles.modeBtn, viewMode === 'chat' && styles.modeBtnActive]}
             onPress={() => setViewMode('chat')}
+            data-testid="agent-chat-mode-chat-button"
           >
             <Ionicons name="chatbubble" size={16} color={viewMode === 'chat' ? '#fff' : C.muted} />
             <Text style={[styles.modeBtnText, viewMode === 'chat' && styles.modeBtnTextActive]}>Chat</Text>
@@ -303,6 +307,7 @@ export default function AgentChatScreen() {
           <TouchableOpacity
             style={[styles.modeBtn, viewMode === 'observe' && styles.modeBtnActive]}
             onPress={() => setViewMode('observe')}
+            data-testid="agent-chat-mode-observe-button"
           >
             <Ionicons name="eye" size={16} color={viewMode === 'observe' ? '#fff' : C.muted} />
             <Text style={[styles.modeBtnText, viewMode === 'observe' && styles.modeBtnTextActive]}>Observe</Text>
@@ -316,6 +321,7 @@ export default function AgentChatScreen() {
               key={agent.id}
               style={[styles.agentTab, selectedAgent?.id === agent.id && styles.agentTabActive]}
               onPress={() => setSelectedAgent(agent)}
+              data-testid={`agent-chat-agent-tab-${agent.id}`}
             >
               <View style={[styles.agentDot, { backgroundColor: agent.avatar_color || C.accent }]} />
               <Text style={[styles.agentTabText, selectedAgent?.id === agent.id && styles.agentTabTextActive]}>
@@ -325,9 +331,14 @@ export default function AgentChatScreen() {
           ))}
         </ScrollView>
 
-        {/* Chat View */}
-        {viewMode === 'chat' ? (
-          <>
+        <KeyboardAvoidingView
+          style={styles.contentWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : Math.max(insets.bottom, 12)}
+        >
+          {/* Chat View */}
+          {viewMode === 'chat' ? (
+            <>
             <ScrollView
               ref={scrollRef}
               style={styles.chatArea}
@@ -367,7 +378,18 @@ export default function AgentChatScreen() {
             </ScrollView>
 
             {/* Input */}
-            <View style={styles.inputRow}>
+            <View
+              style={[
+                styles.inputRow,
+                {
+                  paddingBottom:
+                    Platform.OS === 'ios'
+                      ? Math.max(insets.bottom, 8)
+                      : Math.max(insets.bottom, 14),
+                },
+              ]}
+              data-testid="agent-chat-input-row"
+            >
               <TextInput
                 style={styles.input}
                 placeholder={`Message ${selectedAgent?.name}...`}
@@ -376,58 +398,62 @@ export default function AgentChatScreen() {
                 onChangeText={setInputText}
                 multiline
                 maxLength={1000}
+                data-testid="agent-chat-message-input"
               />
               <TouchableOpacity
                 style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
                 onPress={sendMessage}
                 disabled={!inputText.trim() || isLoading}
+                data-testid="agent-chat-send-button"
               >
                 <Ionicons name="send" size={20} color={inputText.trim() ? '#fff' : C.muted} />
               </TouchableOpacity>
             </View>
-          </>
-        ) : (
-          /* Observe Mode - Agent to Agent Messages */
-          <ScrollView style={styles.chatArea} contentContainerStyle={styles.chatContent}>
-            <Text style={styles.sectionLabel}>Agent-to-Agent Communications</Text>
-            
-            {/* Trigger Agent Chat */}
-            {agents.length >= 2 && (
-              <TouchableOpacity
-                style={styles.triggerBtn}
-                onPress={() => triggerAgentChat(agents[0], agents[1])}
-                disabled={isLoading}
-              >
-                <Ionicons name="chatbubbles" size={18} color="#fff" />
-                <Text style={styles.triggerBtnText}>
-                  {isLoading ? 'Sending...' : `Make ${agents[0]?.name} talk to ${agents[1]?.name}`}
-                </Text>
-              </TouchableOpacity>
-            )}
+            </>
+          ) : (
+            /* Observe Mode - Agent to Agent Messages */
+            <ScrollView style={styles.chatArea} contentContainerStyle={styles.chatContent}>
+              <Text style={styles.sectionLabel}>Agent-to-Agent Communications</Text>
+              
+              {/* Trigger Agent Chat */}
+              {agents.length >= 2 && (
+                <TouchableOpacity
+                  style={styles.triggerBtn}
+                  onPress={() => triggerAgentChat(agents[0], agents[1])}
+                  disabled={isLoading}
+                  data-testid="agent-chat-trigger-conversation-button"
+                >
+                  <Ionicons name="chatbubbles" size={18} color="#fff" />
+                  <Text style={styles.triggerBtnText}>
+                    {isLoading ? 'Sending...' : `Make ${agents[0]?.name} talk to ${agents[1]?.name}`}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-            {agentMessages.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="radio-outline" size={48} color={C.muted} />
-                <Text style={styles.emptyText}>No agent communications yet</Text>
-                <Text style={styles.emptySubtext}>Trigger a conversation above</Text>
-              </View>
-            ) : (
-              agentMessages.map(msg => (
-                <View key={msg.id} style={styles.observeMsg}>
-                  <View style={styles.observeHeader}>
-                    <View style={[styles.observeDot, { backgroundColor: getAgentColor(msg.from_agent_id) }]} />
-                    <Text style={styles.observeFrom}>{getAgentName(msg.from_agent_id)}</Text>
-                    <Ionicons name="arrow-forward" size={14} color={C.muted} />
-                    <Text style={styles.observeTo}>{getAgentName(msg.to_agent_id)}</Text>
-                    <Text style={styles.observeType}>{msg.message_type}</Text>
-                  </View>
-                  <Text style={styles.observeContent}>{msg.content}</Text>
-                  <Text style={styles.observeTime}>{formatTime(msg.timestamp)}</Text>
+              {agentMessages.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="radio-outline" size={48} color={C.muted} />
+                  <Text style={styles.emptyText}>No agent communications yet</Text>
+                  <Text style={styles.emptySubtext}>Trigger a conversation above</Text>
                 </View>
-              ))
-            )}
-          </ScrollView>
-        )}
+              ) : (
+                agentMessages.map(msg => (
+                  <View key={msg.id} style={styles.observeMsg}>
+                    <View style={styles.observeHeader}>
+                      <View style={[styles.observeDot, { backgroundColor: getAgentColor(msg.from_agent_id) }]} />
+                      <Text style={styles.observeFrom}>{getAgentName(msg.from_agent_id)}</Text>
+                      <Ionicons name="arrow-forward" size={14} color={C.muted} />
+                      <Text style={styles.observeTo}>{getAgentName(msg.to_agent_id)}</Text>
+                      <Text style={styles.observeType}>{msg.message_type}</Text>
+                    </View>
+                    <Text style={styles.observeContent}>{msg.content}</Text>
+                    <Text style={styles.observeTime}>{formatTime(msg.timestamp)}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -437,6 +463,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  contentWrapper: { flex: 1 },
   loadingText: { color: C.muted, marginTop: 12 },
   header: {
     flexDirection: 'row',
