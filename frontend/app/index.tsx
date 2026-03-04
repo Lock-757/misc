@@ -896,6 +896,12 @@ export default function ChatScreen() {
                   {/* Settings */}
                   <Text style={styles.menuSectionTitle}>Settings & Network</Text>
                   <View style={styles.menuGrid}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agent-chat'); }} data-testid="menu-agent-chat">
+                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
+                        <Ionicons name="chatbubbles" size={22} color="#F59E0B" />
+                      </View>
+                      <Text style={styles.menuLabel}>Agent Chat</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents-dashboard'); }} data-testid="menu-agents-dashboard">
                       <View style={[styles.menuIcon, { backgroundColor: '#10B981' + '20' }]}>
                         <Ionicons name="people" size={22} color="#10B981" />
@@ -907,12 +913,6 @@ export default function ChatScreen() {
                         <Ionicons name="settings" size={22} color="#6B7280" />
                       </View>
                       <Text style={styles.menuLabel}>Agent Config</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/ui-editor'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#3B82F6' + '20' }]}>
-                        <Ionicons name="color-palette" size={22} color="#3B82F6" />
-                      </View>
-                      <Text style={styles.menuLabel}>UI Editor</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/stats'); }}>
                       <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
