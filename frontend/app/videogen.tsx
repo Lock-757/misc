@@ -311,7 +311,7 @@ export default function VideoGenScreen() {
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Video Generation</Text>
-            <Text style={styles.headerSub}>Video Generation</Text>
+            <Text style={styles.headerSub}>Powered by Sora 2</Text>
           </View>
           <View style={{ width: 44 }} />
         </View>

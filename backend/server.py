@@ -21,6 +21,11 @@ import subprocess
 import xml.etree.ElementTree as ET
 from io import StringIO
 
+# Emergent integrations for LLM
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
+from emergentintegrations.llm.openai.video_generation import OpenAIVideoGeneration
+
 # ==================== AGENT TOOL EXECUTION ENGINE ====================
 
 WORKSPACE_DIR = "/app"  # Restricted workspace for agent file operations
@@ -437,28 +442,30 @@ async def execute_tool(tool: dict, agent_id: str = None) -> str:
         return f"[Tool execution error: {str(e)}]"
 
 async def run_agent_with_tools(agent_prompt: str, user_message: str, agent_id: str = None, max_iterations: int = 5) -> dict:
-    """Run an agent with tool execution capabilities."""
-    messages = [
-        {"role": "system", "content": agent_prompt},
-        {"role": "user", "content": user_message}
-    ]
-    
+    """Run an agent with tool execution capabilities using Emergent LLM."""
     full_response = ""
     tool_results = []
     iterations = 0
+    
+    # Create LLM chat instance with system prompt
+    chat = LlmChat(
+        api_key=LLM_API_KEY,
+        session_id=f"agent-tools-{agent_id or 'anon'}-{uuid.uuid4()}",
+        system_message=agent_prompt
+    ).with_model("openai", "gpt-4o")
+    
+    current_message = user_message
     
     while iterations < max_iterations:
         iterations += 1
         
         # Get agent response
-        response = await grok_client.chat.completions.create(
-            model="grok-3",
-            messages=messages,
-            max_tokens=4000,
-            temperature=0.7
-        )
+        try:
+            agent_response = await chat.send_message(UserMessage(text=current_message))
+        except Exception as e:
+            logger.error(f"LLM error in agentic chat: {e}")
+            raise e
         
-        agent_response = response.choices[0].message.content
         full_response += agent_response + "\n"
         
         # Parse tool calls
@@ -478,9 +485,8 @@ async def run_agent_with_tools(agent_prompt: str, user_message: str, agent_id: s
             })
             tool_output += f"\n{result}\n"
         
-        # Add tool results to conversation
-        messages.append({"role": "assistant", "content": agent_response})
-        messages.append({"role": "user", "content": f"Tool execution results:\n{tool_output}\n\nContinue with your task."})
+        # Next message includes tool results
+        current_message = f"Tool execution results:\n{tool_output}\n\nContinue with your task."
     
     return {
         "response": full_response,
@@ -501,10 +507,24 @@ db = client[os.environ['DB_NAME']]
 
 # Grok API setup
 GROK_API_KEY = os.environ.get('GROK_API_KEY', '')
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# Use Emergent key if available, fall back to Grok
+LLM_API_KEY = EMERGENT_LLM_KEY if EMERGENT_LLM_KEY else GROK_API_KEY
+
 grok_client = AsyncOpenAI(
     api_key=GROK_API_KEY,
     base_url="https://api.x.ai/v1"
 ) if GROK_API_KEY else None
+
+# Helper function to create LLM chat instance
+def create_llm_chat(session_id: str, system_message: str) -> LlmChat:
+    """Create an LlmChat instance with Emergent key."""
+    return LlmChat(
+        api_key=LLM_API_KEY,
+        session_id=session_id,
+        system_message=system_message
+    ).with_model("openai", "gpt-5.2")
 
 # Gemini kept as fallback via Emergent integrations
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -2409,19 +2429,29 @@ When you use a cognitive tool, show your thinking process briefly, then provide 
         if msg.role in ["user", "assistant"]:
             messages_for_api.append({"role": msg.role, "content": msg.content})
     
-    # Call Grok API
+    # Call LLM API (using Emergent if available, fallback to Grok)
     tools_generated = []
     assistant_content = ""
 
-    if grok_client:
+    if LLM_API_KEY:
         try:
-            response = await grok_client.chat.completions.create(
-                model=agent_config.model,
-                messages=messages_for_api,
-                temperature=agent_config.temperature,
-                max_tokens=2048
+            # Use Emergent LlmChat
+            chat_instance = create_llm_chat(
+                session_id=f"chat-{convo.id}",
+                system_message=system_prompt
             )
-            assistant_content = response.choices[0].message.content or ""
+            
+            # Build conversation context
+            for msg in convo.messages[-15:]:
+                if msg.role == "user":
+                    await chat_instance.send_message(UserMessage(text=msg.content))
+                elif msg.role == "assistant" and msg.content:
+                    # Add assistant context (simulated)
+                    pass
+            
+            # Send current message
+            user_msg = UserMessage(text=request.message)
+            assistant_content = await chat_instance.send_message(user_msg)
 
             # Parse tool generations
             tool_matches = re.findall(r'<tool>(.*?)</tool>', assistant_content, re.DOTALL)
@@ -2449,6 +2479,9 @@ When you use a cognitive tool, show your thinking process briefly, then provide 
                 assistant_content = clean_content
 
         except Exception as e:
+            logger.error(f"LLM API error: {e}")
+            assistant_content = f"I apologize, but I'm having trouble connecting to my AI services. Error: {str(e)[:100]}"
+    elif grok_client:
             logger.error(f"Grok API error: {e}")
             assistant_content = f"I apologize, but I encountered an error: {str(e)}"
     else:
@@ -2536,79 +2569,71 @@ async def generate_image(request: Request, img_request: ImageGenerationRequest, 
     adult_mode = agent.get("adult_mode", False) if agent else False
     is_admin = img_request.is_admin
 
-    if not GROK_API_KEY:
+    if not LLM_API_KEY:
         raise HTTPException(status_code=500, detail="API key not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            headers = {
-                "Authorization": f"Bearer {GROK_API_KEY}",
-                "Content-Type": "application/json"
+        enhanced_prompt = img_request.prompt
+        if img_request.quality == "hd":
+            enhanced_prompt = f"High quality, highly detailed, 8K resolution: {img_request.prompt}"
+
+        if not is_admin and not adult_mode:
+            enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
+
+        # Use Emergent OpenAI Image Generation
+        image_gen = OpenAIImageGeneration(api_key=LLM_API_KEY)
+        
+        # Map size to supported format
+        size_map = {
+            "256x256": "1024x1024",
+            "512x512": "1024x1024",
+            "1024x1024": "1024x1024",
+            "1792x1024": "1792x1024",
+            "1024x1792": "1024x1792"
+        }
+        size = size_map.get(img_request.size, "1024x1024")
+        
+        # Generate image
+        image_bytes = image_gen.generate_image(
+            prompt=enhanced_prompt,
+            model="gpt-image-1",
+            size=size,
+            quality="high" if img_request.quality == "hd" else "standard"
+        )
+        
+        if image_bytes:
+            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            
+            image_record = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "agent_id": img_request.agent_id,
+                "prompt": img_request.prompt,
+                "image_base64": image_base64,
+                "size": img_request.size,
+                "quality": img_request.quality,
+                "adult_mode": adult_mode,
+                "created_at": datetime.utcnow()
             }
+            await db.generated_images.insert_one(image_record)
 
-            enhanced_prompt = img_request.prompt
-            if img_request.quality == "hd":
-                enhanced_prompt = f"High quality, highly detailed, 8K resolution: {img_request.prompt}"
+            await trigger_webhooks(img_request.agent_id, "image", {"prompt": img_request.prompt})
 
-            if not is_admin and not adult_mode:
-                enhanced_prompt = f"Safe for work, appropriate content: {enhanced_prompt}"
-
-            payload = {
-                "model": "grok-imagine-image",
-                "prompt": enhanced_prompt,
-                "n": 1,
-                "response_format": "b64_json"
-            }
-
-            response = await client.post(
-                "https://api.x.ai/v1/images/generations",
-                headers=headers,
-                json=payload
+            return ImageGenerationResponse(
+                id=image_record["id"],
+                prompt=img_request.prompt,
+                image_base64=image_base64,
+                size=img_request.size
             )
+        else:
+            raise HTTPException(status_code=500, detail="Image generation failed")
 
-            if response.status_code != 200:
-                error_detail = response.text
-                logger.error(f"Image generation failed: {error_detail}")
-                raise HTTPException(status_code=response.status_code, detail=f"Image generation failed: {error_detail}")
-
-            result = response.json()
-
-            if "data" in result and len(result["data"]) > 0:
-                image_data = result["data"][0]
-                image_base64 = image_data.get("b64_json", "")
-
-                if not image_base64:
-                    raise HTTPException(status_code=500, detail="No image data received")
-
-                image_record = {
-                    "id": str(uuid.uuid4()),
-                    "user_id": user_id,
-                    "agent_id": img_request.agent_id,
-                    "prompt": img_request.prompt,
-                    "image_base64": image_base64,
-                    "size": img_request.size,
-                    "quality": img_request.quality,
-                    "adult_mode": adult_mode,
-                    "created_at": datetime.utcnow()
-                }
-                await db.generated_images.insert_one(image_record)
-
-                await trigger_webhooks(img_request.agent_id, "image", {"prompt": img_request.prompt})
-
-                return ImageGenerationResponse(
-                    id=image_record["id"],
-                    prompt=img_request.prompt,
-                    image_base64=image_base64,
-                    size=img_request.size
-                )
-            else:
-                raise HTTPException(status_code=500, detail="Invalid response from image API")
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Image generation timed out")
     except Exception as e:
         logger.error(f"Image generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "credit" in error_msg.lower() or "rate" in error_msg.lower():
+            raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
+        raise HTTPException(status_code=500, detail=str(e)[:200])
 
 @api_router.get("/generated-images")
 async def get_generated_images(request: Request, agent_id: Optional[str] = None, limit: int = 20, session_token: Optional[str] = Cookie(None)):
@@ -2630,14 +2655,12 @@ async def delete_generated_image(image_id: str):
 
 # ==================== VIDEO GENERATION ENDPOINT ====================
 
-# Using Grok Imagine Video API from xAI
-GROK_VIDEO_API_URL = "https://api.x.ai/v1/videos/generations"
+# Using Sora 2 via Emergent OpenAI integration
 
 class VideoGenerationRequest(BaseModel):
     prompt: str
-    resolution: str = "720p"  # "480p", "720p"
-    duration: int = 6  # 6 to 15 seconds
-    spicy_mode: bool = False  # Allow more adult content for admin
+    resolution: str = "720p"  # "480p", "720p", "1080p"
+    duration: int = 6  # 5 to 20 seconds for Sora 2
 
 class VideoGenerationResponse(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -2659,132 +2682,70 @@ async def generate_video(request: Request, vid_request: VideoGenerationRequest, 
         user = await get_current_user(request, session_token)
         user_id = user["user_id"] if user else "anonymous"
 
-    if not GROK_API_KEY:
-        raise HTTPException(status_code=500, detail="GROK_API_KEY not configured")
+    if not LLM_API_KEY:
+        raise HTTPException(status_code=500, detail="API key not configured")
 
     # Validate parameters
-    valid_resolutions = ["480p", "720p"]
+    valid_resolutions = ["480p", "720p", "1080p"]
     if vid_request.resolution not in valid_resolutions:
         raise HTTPException(status_code=400, detail=f"Invalid resolution. Must be one of: {valid_resolutions}")
-    if vid_request.duration < 6 or vid_request.duration > 15:
-        raise HTTPException(status_code=400, detail="Duration must be between 6 and 15 seconds")
+    if vid_request.duration < 5 or vid_request.duration > 20:
+        raise HTTPException(status_code=400, detail="Duration must be between 5 and 20 seconds")
 
     try:
-        # Prepare the request to Grok Imagine Video API
-        headers = {
-            "Authorization": f"Bearer {GROK_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        logger.info(f"Generating video with Sora 2 for user {user_id}")
         
-        # Map resolution to aspect ratio
-        aspect_ratio = "16:9" if vid_request.resolution == "720p" else "16:9"
+        # Use Emergent Sora 2 integration
+        video_gen = OpenAIVideoGeneration(api_key=LLM_API_KEY)
         
-        # Build payload according to xAI API docs
-        payload = {
-            "model": "grok-imagine-video",
-            "prompt": vid_request.prompt,
-            "resolution": vid_request.resolution,
-            "duration": vid_request.duration,
-            "aspect_ratio": aspect_ratio,
-        }
+        # Map resolution to Sora 2 format
+        resolution_map = {"480p": "480p", "720p": "720p", "1080p": "1080p"}
+        resolution = resolution_map.get(vid_request.resolution, "720p")
         
-        logger.info(f"Generating video with Grok Imagine for user {user_id}")
-        logger.info(f"Payload: {payload}")
-        
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            # Start video generation
-            response = await client.post(
-                GROK_VIDEO_API_URL,
-                headers=headers,
-                json=payload
-            )
-            
-            if response.status_code != 200:
-                error_detail = response.json().get("error", {}).get("message", response.text)
-                raise HTTPException(status_code=response.status_code, detail=f"Grok API error: {error_detail}")
-            
-            result = response.json()
-            logger.info(f"Grok API response: {str(result)[:500]}")
-            
-            # Grok returns a request_id - need to poll for completion
-            request_id = result.get("request_id")
-            if request_id:
-                logger.info(f"Got request_id: {request_id}, polling for completion...")
-                max_attempts = 120  # 10 minutes max (video gen can take a while)
-                for attempt in range(max_attempts):
-                    await asyncio.sleep(5)  # Wait 5 seconds between polls
-                    
-                    status_response = await client.get(
-                        f"https://api.x.ai/v1/videos/{request_id}",
-                        headers=headers
-                    )
-                    
-                    logger.info(f"Poll attempt {attempt + 1}: status {status_response.status_code}")
-                    
-                    if status_response.status_code == 202:
-                        # Still processing
-                        continue
-                    elif status_response.status_code == 200:
-                        result = status_response.json()
-                        logger.info(f"Video ready: {str(result)[:500]}")
-                        break
-                    else:
-                        logger.error(f"Poll error: {status_response.text}")
-                        continue
-                else:
-                    raise HTTPException(status_code=500, detail="Video generation timed out")
-            
-            # Get the video URL from response
-            video_url = None
-            if "response" in result and "video" in result["response"]:
-                video_url = result["response"]["video"].get("url")
-            elif "video_url" in result:
-                video_url = result.get("video_url")
-            elif "url" in result:
-                video_url = result.get("url")
-            
-            if not video_url:
-                # Check if video is directly in response as base64
-                video_b64 = result.get("video_base64") or result.get("data", [{}])[0].get("b64_json")
-                if video_b64:
-                    video_base64 = video_b64
-                else:
-                    raise HTTPException(status_code=500, detail="No video URL or data in response")
-            else:
-                # Download the video
-                video_response = await client.get(video_url)
-                if video_response.status_code != 200:
-                    raise HTTPException(status_code=500, detail="Failed to download generated video")
-                video_base64 = base64.b64encode(video_response.content).decode('utf-8')
-        
-        # Store in database
-        video_record = {
-            "id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "prompt": vid_request.prompt,
-            "video_base64": video_base64,
-            "resolution": vid_request.resolution,
-            "duration": vid_request.duration,
-            "model": "grok-imagine-video",
-            "created_at": datetime.utcnow()
-        }
-        await db.generated_videos.insert_one(video_record)
-        
-        logger.info(f"Video generated successfully for user {user_id}")
-        
-        return VideoGenerationResponse(
-            id=video_record["id"],
+        # Generate video (this handles polling internally)
+        video_bytes = video_gen.generate_video(
             prompt=vid_request.prompt,
-            video_base64=video_base64,
-            resolution=vid_request.resolution,
-            duration=vid_request.duration
+            duration=vid_request.duration,
+            resolution=resolution,
+            max_wait_time=600  # 10 minutes max
         )
+        
+        if video_bytes:
+            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            
+            # Store in database
+            video_record = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "prompt": vid_request.prompt,
+                "video_base64": video_base64,
+                "resolution": vid_request.resolution,
+                "duration": vid_request.duration,
+                "model": "sora-2",
+                "created_at": datetime.utcnow()
+            }
+            await db.generated_videos.insert_one(video_record)
+            
+            logger.info(f"Video generated successfully for user {user_id}")
+            
+            return VideoGenerationResponse(
+                id=video_record["id"],
+                prompt=vid_request.prompt,
+                video_base64=video_base64,
+                resolution=vid_request.resolution,
+                duration=vid_request.duration
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Video generation returned no data")
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Video generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+        error_msg = str(e)
+        if "credit" in error_msg.lower() or "rate" in error_msg.lower():
+            raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)[:200]}")
 
 @api_router.get("/generated-videos")
 async def get_generated_videos(request: Request, limit: int = 20, session_token: Optional[str] = Cookie(None)):
