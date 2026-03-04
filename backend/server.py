@@ -3015,18 +3015,30 @@ async def remove_tool_from_agent(agent_id: str, tool_id: str):
 async def get_stats(agent_id: Optional[str] = None):
     query = {"agent_id": agent_id} if agent_id else {}
     
-    conversations = await db.conversations.find(query).to_list(1000)
-    images = await db.generated_images.find(query).to_list(1000)
-    memories = await db.memories.find(query).to_list(1000)
-    
-    total_messages = sum(len(c.get("messages", [])) for c in conversations)
+    total_conversations = await db.conversations.count_documents(query)
+    total_images = await db.generated_images.count_documents(query)
+    total_memories = await db.memories.count_documents(query)
+
+    message_pipeline = [
+        {"$match": query},
+        {
+            "$project": {
+                "message_count": {
+                    "$size": {"$ifNull": ["$messages", []]}
+                }
+            }
+        },
+        {"$group": {"_id": None, "total_messages": {"$sum": "$message_count"}}},
+    ]
+    message_result = await db.conversations.aggregate(message_pipeline).to_list(1)
+    total_messages = message_result[0]["total_messages"] if message_result else 0
     
     return {
-        "total_conversations": len(conversations),
+        "total_conversations": total_conversations,
         "total_messages": total_messages,
-        "total_images": len(images),
-        "total_memories": len(memories),
-        "avg_messages_per_convo": round(total_messages / max(len(conversations), 1), 1)
+        "total_images": total_images,
+        "total_memories": total_memories,
+        "avg_messages_per_convo": round(total_messages / max(total_conversations, 1), 1)
     }
 
 # ==================== CLEANUP INCOGNITO ====================
@@ -3331,9 +3343,11 @@ async def get_audit_log():
 
 # ==================== ADMIN ENDPOINTS ====================
 
-ADMIN_SECRET = os.environ.get('ADMIN_SECRET', 'change_me_in_production')
+ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 
 async def require_admin(request: Request):
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=500, detail="ADMIN_SECRET is not configured")
     admin_key = request.headers.get("X-Admin-Key", "")
     if admin_key != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Admin access required")
