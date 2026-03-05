@@ -2,22 +2,22 @@
 
 ## Original Problem Statement
 A focused AI agent app centered on "Devin" - an autonomous super-agent with:
-- Conversational chat interface (NEW)
+- Conversational chat interface
 - Task-based workflow for discrete jobs
 - Shell commands & file operations
 - Browser/screen control
 - Self-tasking with approval gates
 - Persistent memory
-- Permission system for capability control
+- Permission system with backend enforcement
 
 ## User Modes
 
 ### 1. Chat Mode (Default)
 For natural conversation with Devin:
 - Back-and-forth dialogue
-- Tool execution shown inline
+- Clean responses (no XML tags shown)
+- Tool executions shown via badge
 - Chat history persisted locally
-- Quick suggestion prompts
 
 ### 2. Task Mode
 For discrete, trackable work:
@@ -41,25 +41,34 @@ For discrete, trackable work:
 ### Self-Tasking
 - Devin can create tasks for himself
 - **ALWAYS requires approval** before execution
-- Cannot bypass approval gate
 
 ### Persistent Memory
 - Auto-injected before each interaction
 - Categories: learning, fact, preference
 - Viewable/deletable in Memory tab
 
-### Permission System
-User controls capabilities via toggles:
-- Self-Modification is OFF by default
-- Devin cannot grant himself permissions
+### Permission System (Backend Enforced)
+| Permission | Default | Maps to Tools |
+|------------|---------|---------------|
+| Shell Commands | ON | shell |
+| File Read | ON | open_file, find_* |
+| File Write | ON | create_file, str_replace |
+| Browser Control | ON | browser_* |
+| Self-Tasking | ON | create_task |
+| Self-Modification | **OFF** | self_improve |
+| Camera | OFF | device_camera |
+| Notifications | ON | device_notify |
+| App Launch | OFF | device_launch_app |
 
-## Current Architecture
+**Key**: When permission is OFF, tool returns `[Permission Denied]` and Devin asks user to enable it.
+
+## Architecture
 
 ### Frontend (6 Tabs)
 ```
 /app/frontend/app/index.tsx
 ├── Chat Tab     - Conversational interface (DEFAULT)
-├── Task Tab     - Create discrete tasks
+├── Task Tab     - Create discrete tasks  
 ├── Queue Tab    - View/run pending tasks
 ├── History Tab  - Run history with quality scores
 ├── Memory Tab   - View Devin's memories
@@ -75,31 +84,32 @@ DELETE /api/devin/tasks/{id}         # Delete task
 POST   /api/devin/tasks/{id}/approve-risk  
 POST   /api/devin/tasks/{id}/run     # Execute task
 GET    /api/devin/runs               # Run history
+GET    /api/devin/permissions        # Get permissions
+POST   /api/devin/permissions        # Sync permissions
 GET    /api/agents/{id}/memories     # View memories
 ```
 
 ## Completed (March 5, 2026)
-- [x] Stripped to Devin-focused app
-- [x] Admin-only password gate
-- [x] Enhanced reasoning framework
+- [x] Lean single-page app with 6 tabs
+- [x] Chat interface with clean responses
+- [x] Task workflow with chaining
 - [x] Quality scoring & auto-retry
-- [x] Memory injection before runs
 - [x] Browser automation tools
-- [x] Task chaining support
-- [x] Memory viewer tab
-- [x] Permission system UI
 - [x] Self-tasking with approval gates
-- [x] **Chat tab with conversational interface** (NEW)
+- [x] **Permission enforcement** (backend blocks tools)
+- [x] **Permission sync API** (frontend → backend)
+- [x] **Response cleanup** (no XML tags shown to user)
+- [x] **Device tool placeholders** (camera, notifications, app launch)
 
-## Next Steps (P0)
-1. **Backend permission enforcement** - Block tools if permission disabled
-2. **Device control tools** - Camera, notifications, app launching
-3. **Real-time execution logs** - Stream tool outputs live
-
-## Environment Variables
-- `EXPO_PUBLIC_ADMIN_SECRET` - Admin password
-- `GROK_API_KEY` - Grok LLM API key  
-- `MONGO_URL` - MongoDB connection
+## Testing Results
+- **Backend**: 100% (20/20 tests passed)
+- Test file: `/app/backend/tests/test_devin_lab.py`
 
 ## Credentials
 - **Admin Password**: `forge_master_2025`
+- **Header**: `X-Admin-Key: forge_master_2025`
+
+## Next Steps (P1/P2)
+- Real-time execution log streaming
+- Full device control (requires native mobile modules)
+- Voice commands
