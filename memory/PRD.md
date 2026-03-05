@@ -1,131 +1,116 @@
-# Devin Lab - Product Requirements Document
+# Agent Platform - Product Requirements Document
 
 ## Original Problem Statement
-A focused AI agent app centered on "Devin" - an autonomous super-agent with:
-- Conversational chat interface
-- Task-based workflow for discrete jobs
-- Shell commands & file operations
-- Browser/screen control
-- Self-tasking with approval gates
-- Persistent memory
-- Permission system with backend enforcement
+Build a visually appealing, monetizable mobile agent platform where users can:
+- Choose and activate specialized "packs" for the agent
+- Each pack tailors the agent's personality, skills, and tool access
+- Monetize through one-time pack purchases
 
-## User Modes
+## Product Direction
+**Core Concept**: Customizable agent platform with monetizable "Packs"
 
-### 1. Chat Mode (Default)
-For natural conversation with Devin:
-- Back-and-forth dialogue
-- Clean responses (no XML tags shown)
-- Tool executions shown via badge
-- Chat history persisted locally
+## Pack System (COMPLETED - March 2026)
 
-### 2. Task Mode
-For discrete, trackable work:
-- Create tasks with title/description
-- Priority levels (low/normal/high)
-- Task chaining for workflows
-- Quality scoring & auto-retry
+### Available Packs
+| Pack | Price | Tools |
+|------|-------|-------|
+| Coder | FREE | shell, file ops, browser |
+| Companion | $4.99 | save_memory, recall_memories |
+| Researcher | $4.99 | All browser tools |
+| Task Master | $4.99 | shell, files, create_task |
 
-## Core Capabilities
-
-### File & Shell Operations
-- Shell command execution
-- File read/write/edit
-- Search in files
-
-### Browser/Screen Control
-- Navigate URLs, take screenshots
-- Click elements, type into inputs
-- Read page content, scroll
-
-### Self-Tasking
-- Devin can create tasks for himself
-- **ALWAYS requires approval** before execution
-
-### Persistent Memory
-- Auto-injected before each interaction
-- Categories: learning, fact, preference
-- Viewable/deletable in Memory tab
-
-### Permission System (Backend Enforced)
-| Permission | Default | Maps to Tools |
-|------------|---------|---------------|
-| Shell Commands | ON | shell |
-| File Read | ON | open_file, find_* |
-| File Write | ON | create_file, str_replace |
-| Browser Control | ON | browser_* |
-| Self-Tasking | ON | create_task |
-| Self-Modification | **OFF** | self_improve |
-| Camera | OFF | device_camera |
-| Notifications | ON | device_notify |
-| App Launch | OFF | device_launch_app |
-
-**Key**: When permission is OFF, tool returns `[Permission Denied]` and Devin asks user to enable it.
+### Implementation Details
+- **Backend**: `/api/packs`, `/api/user/packs`, `/api/user/active-pack`, pack activation/unlock
+- **Frontend**: Packs tab with grid UI, header shows active pack, pack switching clears chat
+- **Memory**: Pack-specific memory (memories associated with `pack_id`)
+- **Tools**: Tool permissions filtered by pack's `allowed_tools`
 
 ## Architecture
 
-### Frontend (6 Tabs)
+### Frontend (Expo/React Native)
 ```
 /app/frontend/app/index.tsx
-├── Chat Tab     - Conversational interface (DEFAULT)
-├── Task Tab     - Create discrete tasks  
-├── Queue Tab    - View/run pending tasks
-├── History Tab  - Run history with quality scores
-├── Memory Tab   - View Devin's memories
-└── Perms Tab    - Control permissions
+├── Chat Tab (default)
+├── Packs Tab (NEW)
+├── Task Tab
+├── Queue Tab
+├── History Tab
+├── Memory Tab
+└── Perms Tab
 ```
 
-### Backend APIs
+### Backend (FastAPI)
 ```
-POST   /api/agentic-chat             # Chat with Devin
-POST   /api/devin/tasks              # Create task
-GET    /api/devin/tasks              # List tasks  
-DELETE /api/devin/tasks/{id}         # Delete task
-POST   /api/devin/tasks/{id}/approve-risk  
-POST   /api/devin/tasks/{id}/run     # Execute task
-GET    /api/devin/runs               # Run history
-GET    /api/devin/permissions        # Get permissions
-POST   /api/devin/permissions        # Sync permissions
-GET    /api/agents/{id}/memories     # View memories
+/app/backend/server.py
+├── Pack System endpoints (lines 1633-1880)
+├── Agentic chat (pack-aware)
+├── Tool execution (pack-filtered)
+├── Memory system (pack-aware)
 ```
 
-## Completed (March 5, 2026)
-- [x] Lean single-page app with 6 tabs
-- [x] Chat interface with clean responses
-- [x] Devin conversational upgrade with warmer runtime prompt guidance
-- [x] Session-based chat continuity (`session_id`) for multi-turn context retention
-- [x] Clear chat now resets session context and ignores stale in-flight responses
+### Database Collections
+- `packs` - Pack definitions
+- `user_packs` - User ownership and activation
+- `agent_memories` - Now includes `pack_id` field
+
+## Completed Features
+
+### Pack System MVP (March 5, 2026)
+- [x] 4 default packs seeded (Coder, Companion, Researcher, Task Master)
+- [x] Pack CRUD APIs
+- [x] User pack ownership tracking
+- [x] Pack activation/switching
+- [x] Tool permissions per pack
+- [x] Header shows active pack
+- [x] Packs tab UI with grid
+- [x] Chat clears on pack switch
+
+### Previous Completions
+- [x] Chat interface with tool execution
 - [x] Task workflow with chaining
 - [x] Quality scoring & auto-retry
 - [x] Browser automation tools
-- [x] Self-tasking with approval gates
-- [x] **Permission enforcement** (backend blocks tools)
-- [x] **Permission sync API** (frontend → backend)
-- [x] **Response cleanup** (no XML tags shown to user)
-- [x] **Device tool placeholders** (camera, notifications, app launch)
+- [x] Permission system (backend enforced)
+- [x] Session-based chat continuity
 
-## Testing Results
-- **Backend**: 100% (20/20 tests passed)
-- Test file: `/app/backend/tests/test_devin_lab.py`
-- **P0 Conversational Intelligence**: 100% backend + 100% frontend verified
-- Test files: `/app/backend/tests/test_session_continuity.py`, `/app/test_reports/iteration_7.json`
+## Testing Status
+- **Backend**: 96% (23/24 tests) - `/app/backend/tests/test_pack_system.py`
+- **Frontend**: 100% (all features working)
+- Test reports: `/app/test_reports/iteration_8.json`
 
 ## Credentials
 - **Admin Password**: `forge_master_2025`
 - **Header**: `X-Admin-Key: forge_master_2025`
 
-## Next Steps
+## Next Steps (P1)
 
-### P1
-- Real-time execution log streaming
-- Mobile chat keyboard/send-button overlap verification
-- Deployment verification after next feature pass
+### Multi-Layered Memory Architecture
+- Associate memories with `pack_id`
+- Pack-local memory retrieval
+- Foundation for premium "Shared Context"
 
-### P2
-- Full device control (requires native mobile modules)
-- Memory edit/delete UX expansion
-- Broader task chaining UI polish
+### Stripe Integration
+- Payment processing for pack purchases
+- Webhook for unlocking packs
 
-### Product / Monetization Readiness
-- Consider monetization after external beta validation proves repeat weekly usage, reliable task execution, and clear time-saving value
-- Minimum monetization prerequisites: user accounts, usage metering, billing, audit logs, and stronger multi-user data isolation
+### Voice Control (Phase 1)
+- Push-to-talk button
+- Speech-to-text integration
+- Text-to-speech responses
+
+## Future/Backlog (P2)
+- Premium "Shared Context" feature
+- Device Control (Notifications, Calendar)
+- Dark/Light mode support
+- Visual task chaining UI
+- Deployment verification
+
+## Known Issues
+- **Deployment**: Previously failing, needs verification after Pack System
+- **User Trust**: Platform-level concern (acknowledged)
+
+## Technical Notes
+- Using Grok API for LLM functions
+- Playwright for browser automation
+- MongoDB for all data storage
+- Hot reload enabled for development
