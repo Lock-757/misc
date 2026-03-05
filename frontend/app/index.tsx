@@ -109,6 +109,7 @@ const DEFAULT_PERMISSIONS: Permission[] = [
 
 export default function DevinLabScreen() {
   const chatScrollRef = useRef<ScrollView>(null);
+  const chatSessionIdRef = useRef('');
   
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -167,6 +168,10 @@ export default function DevinLabScreen() {
     if (isAuthenticated) void loadData();
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
+
   // Save chat to localStorage
   useEffect(() => {
     if (Platform.OS === 'web' && chatMessages.length > 0) {
@@ -193,6 +198,7 @@ export default function DevinLabScreen() {
   const getHeaders = () => ({ 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_SECRET });
 
   const persistChatSessionId = (nextSessionId: string) => {
+    chatSessionIdRef.current = nextSessionId;
     setChatSessionId(nextSessionId);
     if (Platform.OS === 'web') localStorage.setItem('devin_chat_session_id', nextSessionId);
   };
@@ -254,6 +260,8 @@ export default function DevinLabScreen() {
       if (res.data.session_id && res.data.session_id !== activeSessionId) {
         persistChatSessionId(res.data.session_id);
       }
+
+      if (chatSessionIdRef.current !== activeSessionId) return;
       
       const assistantMessage: ChatMessage = {
         id: res.data.message?.id || Date.now().toString(),
@@ -270,6 +278,8 @@ export default function DevinLabScreen() {
       // Refresh data in case Devin modified something
       void loadData();
     } catch (err: any) {
+      if (chatSessionIdRef.current !== activeSessionId) return;
+
       const errorMessage: ChatMessage = {
         id: Date.now().toString(),
         role: 'assistant',
@@ -278,13 +288,14 @@ export default function DevinLabScreen() {
       };
       setChatMessages(prev => [...prev, errorMessage]);
     } finally {
-      setChatSending(false);
+      if (chatSessionIdRef.current === activeSessionId) setChatSending(false);
     }
   };
 
   const clearChat = () => {
     const confirm = Platform.OS === 'web' ? window.confirm('Clear chat history?') : true;
     if (confirm) {
+      setChatSending(false);
       setChatMessages([]);
       const nextChatSessionId = createChatSessionId();
       persistChatSessionId(nextChatSessionId);
