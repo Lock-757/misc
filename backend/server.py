@@ -3439,6 +3439,46 @@ class AgenticChatRequest(BaseModel):
     message: str
     user_id: str = "guest"
 
+def clean_response_for_user(raw_response: str) -> str:
+    """Clean the agent's raw response to show only user-facing content."""
+    import re
+    
+    # Remove <think>...</think> blocks completely
+    cleaned = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL)
+    
+    # Extract content from <message_user>...</message_user> tags
+    message_matches = re.findall(r'<message_user[^>]*>(.*?)</message_user>', cleaned, re.DOTALL)
+    
+    if message_matches:
+        # If there are message_user tags, use their content
+        return '\n\n'.join(m.strip() for m in message_matches if m.strip())
+    
+    # No message_user tags found - clean up other XML tags
+    # Remove all XML tool tags entirely (they're for internal use)
+    cleaned = re.sub(r'<shell[^>]*>.*?</shell>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<open_file[^>]*/>', '', cleaned)
+    cleaned = re.sub(r'<create_file[^>]*>.*?</create_file>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<str_replace[^>]*>.*?</str_replace>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<browser_[^>]*>.*?</browser_[^>]*>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<browser_[^>]*/>', '', cleaned)
+    cleaned = re.sub(r'<save_memory[^>]*>.*?</save_memory>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<recall_memories\s*/>', '', cleaned)
+    cleaned = re.sub(r'<create_task[^>]*>.*?</create_task>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<find_[^>]*/>', '', cleaned)
+    cleaned = re.sub(r'<list_agents\s*/>', '', cleaned)
+    cleaned = re.sub(r'<view_agent[^>]*/>', '', cleaned)
+    # Remove any other XML-like tags
+    cleaned = re.sub(r'<[a-z_]+[^>]*>.*?</[a-z_]+>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<[a-z_]+[^>]*/>', '', cleaned)
+    
+    # Clean up extra whitespace
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = cleaned.strip()
+    
+    # If we end up with nothing, return a default message
+    return cleaned if cleaned else "Task completed."
+
+
 @api_router.post("/agentic-chat")
 async def agentic_chat(body: AgenticChatRequest, request: Request):
     """Chat with an agent that can execute real tools."""
@@ -3486,7 +3526,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
-                "content": result["response"],
+                "content": clean_response_for_user(result["response"]),
             },
             "tool_results": result["tool_results"],
             "iterations": result["iterations"]
@@ -3580,7 +3620,10 @@ DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with p
 ## MEMORY TOOLS
 <save_memory category="learning">What I learned...</save_memory> - Save to persistent memory
 <recall_memories/> - Retrieve your past memories
-<message_user>Important message for the user</message_user> - Communicate findings
+
+## COMMUNICATION
+<message_user>Your response to the user</message_user> - Send your final response
+Always wrap your response to the user in <message_user> tags. This ensures clean formatting.
 
 ## SELF-TASKING (Requires Approval)
 <create_task title="Task name" priority="normal">Detailed task description</create_task> - Create a new task for yourself
