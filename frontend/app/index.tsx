@@ -8,1114 +8,500 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Dimensions,
   ActivityIndicator,
-  RefreshControl,
   Alert,
-  Modal,
-  Pressable,
-  Easing,
-  AppState,
-  AppStateStatus,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
 import axios from 'axios';
-import { useAuth, getStoredToken } from '../context/AuthContext';
-import { AnimatedBackground, PulsingRings } from '../components/AnimatedBackground';
 
 const { width, height } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET;
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || 'forge_master_2025';
 
-interface Message {
-  id: string;
-  role: string;
-  content: string;
-  tool_calls?: any[];
-  timestamp: string;
-}
-
-interface Agent {
-  id: string;
-  name: string;
-  avatar: string;
-  avatar_color: string;
-  system_prompt: string;
-  personality: string;
-  model: string;
-  temperature: number;
-  adult_mode: boolean;
-}
-
-const defaultAgent: Agent = {
-  id: 'default-agent',
-  name: 'Nova',
-  avatar: 'planet',
-  avatar_color: '#7C7C8A',
-  system_prompt: 'You are Nova, a highly intelligent AI assistant.',
-  personality: 'Friendly and professional',
-  model: 'grok-3-latest',
-  temperature: 0.7,
-  adult_mode: false,
-};
-
-const METALLIC = {
-  chrome: '#C0C0C8',
-  silver: '#A8A8B0',
-  gunmetal: '#2A2A32',
-  darkSteel: '#18181D',
-  titanium: '#878792',
-  platinum: '#E5E5EA',
-  accent: '#6366F1',
+const C = {
+  bg: '#0A0A0F',
+  card: '#14141C',
+  border: '#1E1E2A',
+  text: '#E5E5EA',
+  muted: '#6B7280',
+  accent: '#22C55E',
+  purple: '#8B5CF6',
   danger: '#EF4444',
   success: '#10B981',
 };
 
-export default function ChatScreen() {
+interface DevinTask {
+  id: string;
+  title: string;
+  task: string;
+  priority: string;
+  risk_level: 'low' | 'medium' | 'high';
+  requires_approval: boolean;
+  is_approved: boolean;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  run_count: number;
+  last_run_summary: string;
+  last_error: string;
+  updated_at: string;
+}
+
+interface DevinRun {
+  id: string;
+  task_id: string;
+  status: string;
+  dry_run: boolean;
+  iterations: number;
+  response_summary: string;
+  created_at: string;
+}
+
+export default function DevinLabScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ conversationId?: string; agentId?: string }>();
   const scrollViewRef = useRef<ScrollView>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  
-  // Auth
-  const { user, isLoading: authLoading, isAuthenticated, isAdmin, logout, resetSession } = useAuth();
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [agent, setAgent] = useState<Agent>(defaultAgent);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
-  const [availableAgents, setAvailableAgents] = useState<any[]>([]);
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
-  
-  // Voice states
-  const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [showMenu, setShowMenu] = useState(false);
-  // Session-level adult mode (activated by "adult_mode" prompt, not stored)
-  const [sessionAdultMode, setSessionAdultMode] = useState(false);
+  // Auth state - simple admin password
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
 
-  // Auto-logout admin when app goes to background
+  // Main state
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [tasks, setTasks] = useState<DevinTask[]>([]);
+  const [runs, setRuns] = useState<DevinRun[]>([]);
+  
+  // Task creation
+  const [title, setTitle] = useState('');
+  const [taskText, setTaskText] = useState('');
+  const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal');
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'create' | 'queue' | 'history'>('create');
+
+  // Check if stored auth exists
   useEffect(() => {
-    if (!isAdmin) return;
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'background' || state === 'inactive') {
-        logout();
+    if (Platform.OS === 'web') {
+      const stored = localStorage.getItem('devin_admin');
+      if (stored === 'true') {
+        setIsAuthenticated(true);
       }
-    });
-    return () => sub.remove();
-  }, [isAdmin]);
-  const [suggestionIndex, setSuggestionIndex] = useState(0);
-  
-  // Rotating suggestions - different categories
-  const allSuggestions = [
-    // Business
-    { text: 'Business idea for tech', icon: 'briefcase', color: '#6366F1' },
-    { text: 'Marketing strategy tips', icon: 'megaphone', color: '#8B5CF6' },
-    { text: 'Email to client', icon: 'mail', color: '#06B6D4' },
-    // Home & Life
-    { text: 'Quick dinner recipe', icon: 'restaurant', color: '#F59E0B' },
-    { text: 'Home organization tips', icon: 'home', color: '#10B981' },
-    { text: 'Workout routine', icon: 'fitness', color: '#EF4444' },
-    // Creative
-    { text: 'Story idea', icon: 'book', color: '#EC4899' },
-    { text: 'Design inspiration', icon: 'color-palette', color: '#A855F7' },
-    { text: 'Social media caption', icon: 'logo-instagram', color: '#F97316' },
-    // Productivity
-    { text: 'Budget planning help', icon: 'wallet', color: '#14B8A6' },
-    { text: 'Travel itinerary', icon: 'airplane', color: '#3B82F6' },
-    { text: 'Meeting agenda', icon: 'calendar', color: '#84CC16' },
-    // Tech
-    { text: 'Code review help', icon: 'code-slash', color: '#6366F1' },
-    { text: 'Debug this error', icon: 'bug', color: '#EF4444' },
-    { text: 'Explain concept', icon: 'bulb', color: '#F59E0B' },
-  ];
-  
-  // Get current set of 3 suggestions
-  const currentSuggestions = [
-    allSuggestions[suggestionIndex % allSuggestions.length],
-    allSuggestions[(suggestionIndex + 1) % allSuggestions.length],
-    allSuggestions[(suggestionIndex + 2) % allSuggestions.length],
-  ];
-  
-  // Rotate suggestions every 8 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSuggestionIndex(prev => (prev + 3) % allSuggestions.length);
-    }, 8000);
-    return () => clearInterval(interval);
+    }
   }, []);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [authLoading, isAuthenticated]);
-
+  // Load data when authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      loadData();
-      startAnimations();
-      setupAudio();
-      loadPendingApprovals();
-      loadAvailableAgents();
+      void loadData();
     }
-    return () => {
-      if (recording) {
-        recording.stopAndUnloadAsync();
-      }
-    };
   }, [isAuthenticated]);
 
-  const loadPendingApprovals = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/pending-changes`);
-      setPendingApprovalsCount(res.data?.length || 0);
-    } catch (e) {}
-  };
-
-  const loadAvailableAgents = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/agents`);
-      setAvailableAgents(res.data || []);
-    } catch (e) {}
-  };
-
-  const switchToAgent = async (newAgent: any) => {
-    setAgent(newAgent);
-    setShowAgentPicker(false);
-    setMessages([]);
-    setConversationId(null);
-  };
-
-  // Handle conversation resumption from history
-  useEffect(() => {
-    if (params.conversationId) {
-      loadConversation(params.conversationId);
-    }
-  }, [params.conversationId]);
-
-  // Helper functions defined before early returns to satisfy Rules of Hooks
-  const loadConversation = async (convId: string) => {
-    try {
-      const res = await axios.get(`${API_URL}/api/conversations/${convId}`);
-      if (res.data) {
-        setConversationId(res.data.id);
-        setMessages(res.data.messages || []);
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+  const handleAuth = () => {
+    if (password === ADMIN_SECRET) {
+      setIsAuthenticated(true);
+      setAuthError('');
+      if (Platform.OS === 'web') {
+        localStorage.setItem('devin_admin', 'true');
       }
-    } catch (error) {
-      console.log('Error loading conversation:', error);
-      Alert.alert('Error', 'Could not load conversation');
+    } else {
+      setAuthError('Invalid password');
     }
   };
 
-  const setupAudio = async () => {
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-    } catch (error) {
-      console.log('Audio setup error:', error);
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setPassword('');
+    if (Platform.OS === 'web') {
+      localStorage.removeItem('devin_admin');
     }
   };
 
-  const startAnimations = () => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
+  const getHeaders = () => {
+    return {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': ADMIN_SECRET,
+    };
   };
 
   const loadData = async () => {
     try {
-      const agentsRes = await axios.get(`${API_URL}/api/agents`);
-      if (agentsRes.data.length > 0) {
-        setAgent(agentsRes.data[0]);
-      } else {
-        const newAgent = await axios.post(`${API_URL}/api/agents`, {
-          name: 'Nova',
-          avatar: 'planet',
-          avatar_color: '#7C7C8A',
-        });
-        setAgent(newAgent.data);
-      }
-    } catch (error) {
-      console.log('Error loading data:', error);
+      setLoading(true);
+      const headers = getHeaders();
+      const [tasksRes, runsRes] = await Promise.all([
+        axios.get(`${API_URL}/api/devin/tasks`, { headers }),
+        axios.get(`${API_URL}/api/devin/runs`, { headers }),
+      ]);
+      setTasks(tasksRes.data || []);
+      setRuns(runsRes.data || []);
+    } catch (err) {
+      console.log('Load error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Regular function (not useCallback) to avoid Rules of Hooks violations
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+  const createTask = async () => {
+    if (!title.trim() || !taskText.trim() || saving) return;
+    try {
+      setSaving(true);
+      const headers = getHeaders();
+      await axios.post(
+        `${API_URL}/api/devin/tasks`,
+        { title: title.trim(), task: taskText.trim(), priority },
+        { headers }
+      );
+      setTitle('');
+      setTaskText('');
+      setPriority('normal');
+      await loadData();
+      setActiveTab('queue');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Failed to create task');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleQuickLogout = () => {
-    const performLogout = async () => {
-      await logout();
-      setShowMenu(false);
-      router.replace('/login');
-    };
+  const approveTask = async (taskId: string) => {
+    try {
+      const headers = getHeaders();
+      await axios.post(`${API_URL}/api/devin/tasks/${taskId}/approve-risk`, {}, { headers });
+      await loadData();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Approval failed');
+    }
+  };
 
-    if (Platform.OS === 'web') {
-      void performLogout();
-      return;
+  const runTask = async (taskId: string, dryRun: boolean) => {
+    if (!dryRun) {
+      const proceed = Platform.OS === 'web'
+        ? window.confirm('This will use credits. Proceed?')
+        : await new Promise((resolve) =>
+            Alert.alert('Run Live?', 'This will use model credits.', [
+              { text: 'Cancel', onPress: () => resolve(false) },
+              { text: 'Run', onPress: () => resolve(true) },
+            ])
+          );
+      if (!proceed) return;
     }
 
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: () => {
-          void performLogout();
-        },
-      },
-    ]);
+    try {
+      const headers = getHeaders();
+      await axios.post(`${API_URL}/api/devin/tasks/${taskId}/run`, { dry_run: dryRun }, { headers });
+      await loadData();
+      setActiveTab('history');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Run failed');
+    }
   };
 
-  const handleSessionReset = async () => {
-    await resetSession();
-    setShowMenu(false);
-    setShowAgentPicker(false);
-    router.replace('/login');
+  const deleteTask = async (taskId: string) => {
+    const confirm = Platform.OS === 'web'
+      ? window.confirm('Delete this task?')
+      : await new Promise((resolve) =>
+          Alert.alert('Delete Task?', 'This cannot be undone.', [
+            { text: 'Cancel', onPress: () => resolve(false) },
+            { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!confirm) return;
+
+    try {
+      const headers = getHeaders();
+      await axios.delete(`${API_URL}/api/devin/tasks/${taskId}`, { headers });
+      await loadData();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Delete failed');
+    }
   };
 
-  // Show loading while checking auth
-  if (authLoading) {
-    return (
-      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={METALLIC.accent} />
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
+  const getRiskColor = (risk: string) => {
+    if (risk === 'high') return C.danger;
+    if (risk === 'medium') return '#F59E0B';
+    return C.success;
+  };
 
-  // Don't render if not authenticated (will redirect)
+  // ============ AUTH SCREEN ============
   if (!isAuthenticated) {
     return (
-      <LinearGradient colors={['#0A0A0F', '#12121A', '#0A0A0F']} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.authRecoveryContainer} data-testid="auth-recovery-screen">
-            <Ionicons name="warning-outline" size={44} color={METALLIC.titanium} />
-            <Text style={styles.authRecoveryTitle}>Session needed</Text>
-            <Text style={styles.authRecoverySubtitle}>Please login again or reset your session if the app got stuck.</Text>
-            <View style={styles.authRecoveryActions}>
-              <TouchableOpacity style={styles.authRecoveryPrimary} onPress={() => router.replace('/login')} data-testid="auth-recovery-login-button" testID="auth-recovery-login-button" dataSet={{ testid: 'auth-recovery-login-button' }}>
-                <Text style={styles.authRecoveryPrimaryText}>Go to Login</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.authRecoverySecondary} onPress={handleSessionReset} data-testid="auth-recovery-reset-button" testID="auth-recovery-reset-button" dataSet={{ testid: 'auth-recovery-reset-button' }}>
-                <Text style={styles.authRecoverySecondaryText}>Reset Session</Text>
-              </TouchableOpacity>
+      <LinearGradient colors={[C.bg, '#12121A', C.bg]} style={styles.container}>
+        <SafeAreaView style={styles.authContainer}>
+          <View style={styles.authCard}>
+            <View style={styles.authLogo}>
+              <LinearGradient colors={[C.accent, '#16A34A']} style={styles.logoGradient}>
+                <Ionicons name="flash" size={40} color="#fff" />
+              </LinearGradient>
             </View>
+            <Text style={styles.authTitle}>Devin Lab</Text>
+            <Text style={styles.authSubtitle}>Admin Access Required</Text>
+
+            <TextInput
+              style={styles.authInput}
+              placeholder="Enter admin password"
+              placeholderTextColor={C.muted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              onSubmitEditing={handleAuth}
+              data-testid="admin-password-input"
+            />
+
+            {authError ? <Text style={styles.authError}>{authError}</Text> : null}
+
+            <TouchableOpacity style={styles.authButton} onPress={handleAuth} data-testid="admin-login-button">
+              <Text style={styles.authButtonText}>Enter Lab</Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </LinearGradient>
     );
   }
 
-  // Voice Recording
-  const startRecording = async () => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant microphone access');
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(newRecording);
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Recording error:', error);
-      Alert.alert('Error', 'Failed to start recording');
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recording) return;
-
-    try {
-      setIsRecording(false);
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-
-      if (uri) {
-        // For now, we'll simulate transcription
-        // In production, you'd send this to a speech-to-text API
-        Alert.alert(
-          'Voice Recording',
-          'Voice recording captured! In production, this would be transcribed to text.',
-          [
-            { text: 'OK' }
-          ]
-        );
-      }
-    } catch (error) {
-      console.error('Stop recording error:', error);
-    }
-  };
-
-  // Text-to-Speech
-  const speakMessage = async (text: string) => {
-    if (isSpeaking) {
-      Speech.stop();
-      setIsSpeaking(false);
-      return;
-    }
-
-    setIsSpeaking(true);
-    Speech.speak(text, {
-      language: 'en',
-      pitch: 1.0,
-      rate: 0.9,
-      onDone: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
-  };
-
-  const sendMessage = async () => {
-    if (!inputText.trim() || isLoading) return;
-
-    // Secret adult_mode activation prompt
-    if (inputText.trim().toLowerCase() === 'adult_mode') {
-      setSessionAdultMode(true);
-      setInputText('');
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: 'Content filter disabled for this session.',
-        timestamp: new Date().toISOString(),
-      }]);
-      return;
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputText.trim(),
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
-
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    try {
-      let token = await getStoredToken();
-      const headers: any = {};
-      
-      // Check for admin login if no token
-      if (!token && Platform.OS === 'web') {
-        const isAdminLoggedIn = localStorage.getItem('forge_admin') === 'true';
-        if (isAdminLoggedIn && ADMIN_SECRET) {
-          headers['X-Admin-Key'] = ADMIN_SECRET;
-        }
-      }
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await axios.post(`${API_URL}/api/chat`, {
-        agent_id: agent.id,
-        conversation_id: conversationId,
-        message: userMessage.content,
-        user_id: user?.user_id,
-      }, { headers });
-
-      setConversationId(response.data.conversation_id);
-      
-      const assistantMessage: Message = {
-        id: response.data.message.id,
-        role: 'assistant',
-        content: response.data.message.content,
-        tool_calls: response.data.message.tool_calls,
-        timestamp: response.data.message.timestamp,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // Auto-speak if voice is enabled
-      if (voiceEnabled && assistantMessage.content) {
-        // Optional: auto-speak responses
-        // speakMessage(assistantMessage.content);
-      }
-    } catch (error: any) {
-      console.error('Chat error:', error);
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: 'Connection interrupted. Please try again.',
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  };
-
-  const clearChat = () => {
-    setMessages([]);
-    setConversationId(null);
-  };
-
-  const copyToClipboard = (text: string) => {
-    Alert.alert('Copied', 'Message copied to clipboard');
-  };
-
-  const getAvatarIcon = (avatar: string) => {
-    const icons: { [key: string]: keyof typeof Ionicons.glyphMap } = {
-      robot: 'hardware-chip',
-      planet: 'planet',
-      sparkles: 'sparkles',
-      flash: 'flash',
-      diamond: 'diamond',
-      flame: 'flame',
-      cube: 'cube',
-      prism: 'prism',
-    };
-    return icons[avatar] || 'planet';
-  };
-
-  const renderMessage = (message: Message, index: number) => {
-    const isUser = message.role === 'user';
-    const isSelected = selectedMessage === message.id;
-
-    return (
-      <Animated.View
-        key={message.id}
-        style={[
-          styles.messageContainer,
-          isUser ? styles.userMessageContainer : styles.assistantMessageContainer,
-          { opacity: fadeAnim },
-        ]}
-      >
-        {!isUser && (
-          <LinearGradient
-            colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
-            style={styles.avatarSmall}
-          >
-            <Ionicons name={getAvatarIcon(agent.avatar)} size={16} color={METALLIC.chrome} />
-          </LinearGradient>
-        )}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onLongPress={() => setSelectedMessage(isSelected ? null : message.id)}
-          style={[
-            styles.messageBubble,
-            isUser ? styles.userBubble : styles.assistantBubble,
-          ]}
-        >
-          <LinearGradient
-            colors={isUser ? [METALLIC.accent, '#4F46E5'] : [METALLIC.gunmetal, '#1F1F28']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.bubbleGradient}
-          >
-            <Text style={[styles.messageText, isUser && styles.userMessageText]}>
-              {message.content}
-            </Text>
-            {message.tool_calls && message.tool_calls.length > 0 && (
-              <View style={styles.toolContainer}>
-                {message.tool_calls.map((tool: any, idx: number) => (
-                  <View key={idx} style={styles.toolBadge}>
-                    <Ionicons name="construct" size={12} color={METALLIC.accent} />
-                    <Text style={styles.toolText}>{tool.name}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-        
-        {/* Message Actions */}
-        {isSelected && (
-          <View style={styles.messageActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => copyToClipboard(message.content)}
-            >
-              <Ionicons name="copy-outline" size={16} color={METALLIC.chrome} />
-            </TouchableOpacity>
-            {!isUser && (
-              <TouchableOpacity
-                style={[styles.actionButton, isSpeaking && styles.actionButtonActive]}
-                onPress={() => speakMessage(message.content)}
-              >
-                <Ionicons 
-                  name={isSpeaking ? "stop" : "volume-high-outline"} 
-                  size={16} 
-                  color={isSpeaking ? METALLIC.accent : METALLIC.chrome} 
-                />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </Animated.View>
-    );
-  };
-
+  // ============ MAIN APP ============
   return (
-    <LinearGradient
-      colors={['#0A0A0F', '#12121A', '#0A0A0F']}
-      style={styles.container}
-    >
+    <LinearGradient colors={[C.bg, '#12121A', C.bg]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <LinearGradient
-            colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
-            style={styles.headerGradient}
-          >
-            <TouchableOpacity onPress={handleQuickLogout} style={styles.headerButton} data-testid="header-left-logout-button" testID="header-left-logout-button">
-              <Ionicons name="log-out-outline" size={24} color={METALLIC.danger} />
+          <View style={styles.headerLeft}>
+            <LinearGradient colors={[C.accent, '#16A34A']} style={styles.headerLogo}>
+              <Ionicons name="flash" size={20} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.headerTitle}>Devin Lab</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => void loadData()} style={styles.headerBtn} data-testid="refresh-button">
+              <Ionicons name="refresh" size={20} color={C.accent} />
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => router.push('/settings')} style={styles.agentInfo}>
-              <Animated.View
-                style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}
-              >
-                <LinearGradient
-                  colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
-                  style={styles.avatarGradient}
-                >
-                  <View style={styles.avatarInner}>
-                    <Ionicons name={getAvatarIcon(agent.avatar)} size={26} color={METALLIC.chrome} />
-                  </View>
-                  <View style={styles.avatarRing} />
-                </LinearGradient>
-              </Animated.View>
-              <View style={styles.agentTextContainer}>
-                <TouchableOpacity onPress={() => setShowAgentPicker(true)} style={styles.agentNameRow}>
-                  <Text style={styles.agentName}>{agent.name}</Text>
-                  <Ionicons name="chevron-down" size={16} color={METALLIC.silver} style={{marginLeft: 4}} />
-                </TouchableOpacity>
-                <View style={styles.statusContainer}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.statusText}>Online</Text>
-                </View>
-              </View>
+            <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} data-testid="logout-button">
+              <Ionicons name="log-out-outline" size={18} color={C.danger} />
+              <Text style={styles.logoutText}>Exit</Text>
             </TouchableOpacity>
-
-            <View style={styles.headerRight}>
-              <TouchableOpacity onPress={() => router.push('/search')} style={styles.headerButton}>
-                <Ionicons name="search-outline" size={24} color={METALLIC.silver} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowMenu(true)} onPressIn={() => setShowMenu(true)} style={styles.headerButton} data-testid="grid-menu-btn" testID="grid-menu-btn" dataSet={{ testid: 'grid-menu-btn' }}>
-                <Ionicons name="grid-outline" size={24} color={METALLIC.silver} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleQuickLogout} style={styles.headerLogoutPill} data-testid="header-quick-logout-button" testID="header-quick-logout-button" dataSet={{ testid: 'header-quick-logout-button' }}>
-                <Ionicons name="log-out-outline" size={16} color={METALLIC.titanium} />
-                <Text style={styles.headerLogoutText}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
+          </View>
         </View>
 
-        {/* Messages */}
+        {/* Tabs */}
+        <View style={styles.tabBar}>
+          {(['create', 'queue', 'history'] as const).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && styles.tabActive]}
+              onPress={() => setActiveTab(tab)}
+              data-testid={`tab-${tab}`}
+            >
+              <Ionicons
+                name={tab === 'create' ? 'add-circle' : tab === 'queue' ? 'list' : 'time'}
+                size={18}
+                color={activeTab === tab ? C.accent : C.muted}
+              />
+              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+                {tab === 'create' ? 'New Task' : tab === 'queue' ? `Queue (${tasks.length})` : 'History'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Content */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.chatContainer}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : Math.max(insets.bottom, 12)}
+          style={styles.content}
         >
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={METALLIC.silver} />
-            }
-          >
-            {messages.length === 0 ? (
-              <View style={styles.emptyState}>
-                {/* Animated Background */}
-                <AnimatedBackground intensity="medium" />
-                
-                {/* Hero Section with 3D Effect */}
-                <View style={styles.heroSection}>
-                  <View style={styles.heroRings}>
-                    <PulsingRings />
-                  </View>
-                  <Animated.View style={[styles.heroAvatar, { transform: [{ scale: pulseAnim }] }]}>
-                    <LinearGradient
-                      colors={['#6366F1', '#8B5CF6', '#EC4899']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.heroAvatarGradient}
-                    >
-                      <View style={styles.heroAvatarInner}>
-                        <Ionicons name={getAvatarIcon(agent.avatar)} size={40} color="#fff" />
-                      </View>
-                    </LinearGradient>
-                  </Animated.View>
-                  <Text style={styles.heroTitle}>{agent.name}</Text>
-                  <Text style={styles.heroSubtitle}>AI-Powered Intelligence</Text>
-                </View>
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={C.accent} />
+            </View>
+          ) : activeTab === 'create' ? (
+            // ============ CREATE TAB ============
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.card} data-testid="create-task-card">
+                <Text style={styles.cardTitle}>What should Devin do?</Text>
+                <Text style={styles.cardSubtitle}>
+                  Devin can run shell commands, read/write files, and execute complex tasks.
+                </Text>
 
-                {/* Glassmorphic Suggestion Cards */}
-                <Text style={styles.sectionLabel}>WHAT CAN I HELP WITH?</Text>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.suggestionScroll}
-                >
-                  {currentSuggestions.map((suggestion, idx) => (
-                    <TouchableOpacity
-                      key={`${suggestionIndex}-${idx}`}
-                      style={styles.suggestion3D}
-                      onPress={() => setInputText(suggestion.text)}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={[`${suggestion.color}30`, `${suggestion.color}10`, 'transparent']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.suggestion3DGradient}
-                      >
-                        <View style={[styles.suggestion3DIcon, { backgroundColor: `${suggestion.color}40` }]}>
-                          <Ionicons name={suggestion.icon as any} size={24} color={suggestion.color} />
-                        </View>
-                        <Text style={styles.suggestion3DText}>{suggestion.text}</Text>
-                        <Ionicons name="arrow-forward" size={16} color={METALLIC.titanium} />
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {/* Quick Action Buttons - Floating Style */}
-                <View style={styles.quickActions}>
-                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/imagegen')}>
-                    <LinearGradient
-                      colors={['#6366F1', '#4F46E5']}
-                      style={styles.quickActionGradient}
-                    >
-                      <Ionicons name="sparkles" size={22} color="#fff" />
-                    </LinearGradient>
-                    <Text style={styles.quickActionLabel}>Create</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/history')}>
-                    <LinearGradient
-                      colors={['#EC4899', '#DB2777']}
-                      style={styles.quickActionGradient}
-                    >
-                      <Ionicons name="time" size={22} color="#fff" />
-                    </LinearGradient>
-                    <Text style={styles.quickActionLabel}>History</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/tools')}>
-                    <LinearGradient
-                      colors={['#10B981', '#059669']}
-                      style={styles.quickActionGradient}
-                    >
-                      <Ionicons name="build" size={22} color="#fff" />
-                    </LinearGradient>
-                    <Text style={styles.quickActionLabel}>Tools</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.quickAction} onPress={() => router.push('/agents')}>
-                    <LinearGradient
-                      colors={['#F59E0B', '#D97706']}
-                      style={styles.quickActionGradient}
-                    >
-                      <Ionicons name="people" size={22} color="#fff" />
-                    </LinearGradient>
-                    <Text style={styles.quickActionLabel}>Agents</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Model Info Badge */}
-                <View style={styles.modelBadge}>
-                  <View style={styles.modelDot} />
-                  <Text style={styles.modelText}>Powered by {agent.model}</Text>
-                </View>
-              </View>
-            ) : (
-              messages.map((msg, idx) => renderMessage(msg, idx))
-            )}
-            {isLoading && (
-              <View style={styles.loadingContainer}>
-                <LinearGradient
-                  colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
-                  style={styles.avatarSmall}
-                >
-                  <Ionicons name={getAvatarIcon(agent.avatar)} size={16} color={METALLIC.chrome} />
-                </LinearGradient>
-                <View style={styles.typingIndicator}>
-                  <LinearGradient
-                    colors={[METALLIC.gunmetal, '#1F1F28']}
-                    style={styles.typingGradient}
-                  >
-                    <View style={styles.typingDots}>
-                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
-                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
-                      <Animated.View style={[styles.dot, { opacity: pulseAnim }]} />
-                    </View>
-                    <Text style={styles.typingText}>Processing</Text>
-                  </LinearGradient>
-                </View>
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Input */}
-          <View
-            style={[
-              styles.inputWrapper,
-              {
-                paddingBottom:
-                  Platform.OS === 'ios'
-                    ? Math.max(insets.bottom, 8)
-                    : Math.max(insets.bottom, 14),
-              },
-            ]}
-            data-testid="main-chat-input-wrapper"
-          >
-            <LinearGradient
-              colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
-              style={styles.inputGradient}
-            >
-              <View style={styles.inputContainer}>
-                <TouchableOpacity 
-                  style={[styles.inputIcon, isRecording && styles.inputIconRecording]} 
-                  onPress={isRecording ? stopRecording : startRecording}
-                  data-testid="main-chat-voice-toggle-button"
-                >
-                  <Ionicons 
-                    name={isRecording ? "stop-circle" : "mic-outline"} 
-                    size={22} 
-                    color={isRecording ? METALLIC.danger : METALLIC.titanium} 
-                  />
-                </TouchableOpacity>
                 <TextInput
                   style={styles.input}
-                  placeholder={isRecording ? "Recording..." : "Message..."}
-                  placeholderTextColor={isRecording ? METALLIC.danger : METALLIC.titanium}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  multiline
-                  maxLength={2000}
-                  editable={!isRecording}
-                  data-testid="main-chat-message-input"
+                  placeholder="Task title (e.g., 'Fix login bug')"
+                  placeholderTextColor={C.muted}
+                  value={title}
+                  onChangeText={setTitle}
+                  data-testid="task-title-input"
                 />
-                <TouchableOpacity
-                  style={[
-                    styles.sendButton,
-                    !inputText.trim() && styles.sendButtonDisabled,
-                  ]}
-                  onPress={sendMessage}
-                  disabled={!inputText.trim() || isLoading}
-                  data-testid="main-chat-send-button"
-                >
-                  <LinearGradient
-                    colors={inputText.trim() ? [METALLIC.accent, '#4F46E5'] : [METALLIC.gunmetal, METALLIC.darkSteel]}
-                    style={styles.sendGradient}
-                  >
-                    <Ionicons name="arrow-up" size={20} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-          </View>
-        </KeyboardAvoidingView>
 
-        {/* Agent Picker Modal */}
-        <Modal visible={showAgentPicker} transparent animationType="fade">
-          <TouchableOpacity 
-            style={styles.menuOverlay} 
-            activeOpacity={1} 
-            onPress={() => setShowAgentPicker(false)}
-          >
-            <View style={styles.agentPickerContainer}>
-              <Text style={styles.agentPickerTitle}>Switch Agent</Text>
-              <ScrollView style={styles.agentPickerList}>
-                {availableAgents.map((a) => (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={[styles.agentPickerItem, agent?.id === a.id && styles.agentPickerItemActive]}
-                    onPress={() => switchToAgent(a)}
-                  >
-                    <View style={[styles.agentPickerAvatar, { backgroundColor: a.avatar_color || '#8B5CF6' }]}>
-                      <Text style={styles.agentPickerAvatarText}>{a.name?.[0] || '?'}</Text>
-                    </View>
-                    <View style={styles.agentPickerInfo}>
-                      <Text style={styles.agentPickerName}>{a.name}</Text>
-                      <Text style={styles.agentPickerType}>{a.has_tools ? 'Tool Agent' : 'Chat Agent'}</Text>
-                    </View>
-                    {agent?.id === a.id && (
-                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </TouchableOpacity>
-        </Modal>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Describe the task in detail..."
+                  placeholderTextColor={C.muted}
+                  value={taskText}
+                  onChangeText={setTaskText}
+                  multiline
+                  data-testid="task-body-input"
+                />
 
-        {/* Features Menu Modal */}
-        <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
-          <View style={styles.menuOverlay}>
-            <Pressable style={styles.menuBackdrop} onPress={() => setShowMenu(false)} data-testid="menu-overlay-close" testID="menu-overlay-close" dataSet={{ testid: 'menu-overlay-close' }} />
-            <View style={[styles.menuContainer, { paddingBottom: Math.max(insets.bottom, 10) }]} data-testid="menu-container" testID="menu-container" dataSet={{ testid: 'menu-container' }}>
-              <LinearGradient
-                colors={[METALLIC.gunmetal, METALLIC.darkSteel]}
-                style={styles.menuGradient}
-              >
-                <View style={styles.menuHeader}>
-                  <Text style={styles.menuTitle}>Features</Text>
-                  <TouchableOpacity onPress={() => setShowMenu(false)}>
-                    <Ionicons name="close" size={24} color={METALLIC.titanium} />
-                  </TouchableOpacity>
+                <Text style={styles.labelSmall}>Priority</Text>
+                <View style={styles.priorityRow}>
+                  {(['low', 'normal', 'high'] as const).map((p) => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.priorityPill, priority === p && styles.priorityPillActive]}
+                      onPress={() => setPriority(p)}
+                      data-testid={`priority-${p}`}
+                    >
+                      <Text style={[styles.priorityText, priority === p && styles.priorityTextActive]}>
+                        {p.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
                 <TouchableOpacity
-                  style={styles.menuQuickLogoutButton}
-                  onPress={() => {
-                    setShowMenu(false);
-                    handleQuickLogout();
-                  }}
+                  style={[styles.createBtn, (!title.trim() || !taskText.trim() || saving) && styles.btnDisabled]}
+                  onPress={createTask}
+                  disabled={!title.trim() || !taskText.trim() || saving}
+                  data-testid="create-task-button"
                 >
-                  <Ionicons name="log-out-outline" size={16} color={METALLIC.danger} />
-                  <Text style={styles.menuQuickLogoutText}>Log out</Text>
+                  <LinearGradient colors={[C.accent, '#16A34A']} style={styles.createBtnGradient}>
+                    <Ionicons name="rocket" size={18} color="#fff" />
+                    <Text style={styles.createBtnText}>{saving ? 'Creating...' : 'Queue Task'}</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
-                
-                <ScrollView showsVerticalScrollIndicator={false} style={styles.menuScroll}>
-                  {/* Agents & Chat */}
-                  <Text style={styles.menuSectionTitle}>Agents & Chat</Text>
-                  <View style={styles.menuGrid}>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
-                        <Ionicons name="people" size={22} color={METALLIC.accent} />
-                      </View>
-                      <Text style={styles.menuLabel}>Agents</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/templates'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
-                        <Ionicons name="albums" size={22} color="#8B5CF6" />
-                      </View>
-                      <Text style={styles.menuLabel}>Templates</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/history'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#06B6D4' + '20' }]}>
-                        <Ionicons name="time" size={22} color="#06B6D4" />
-                      </View>
-                      <Text style={styles.menuLabel}>History</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/search'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
-                        <Ionicons name="search" size={22} color="#F59E0B" />
-                      </View>
-                      <Text style={styles.menuLabel}>Search</Text>
-                    </TouchableOpacity>
-                  </View>
+              </View>
 
-                  {/* Memory & Data */}
-                  <Text style={styles.menuSectionTitle}>Memory & Data</Text>
-                  <View style={styles.menuGrid}>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/memory'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#EC4899' + '20' }]}>
-                        <Ionicons name="hardware-chip" size={22} color="#EC4899" />
-                      </View>
-                      <Text style={styles.menuLabel}>Memory</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/bookmarks'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
-                        <Ionicons name="bookmark" size={22} color="#F59E0B" />
-                      </View>
-                      <Text style={styles.menuLabel}>Bookmarks</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/quick-replies'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#14B8A6' + '20' }]}>
-                        <Ionicons name="chatbubbles" size={22} color="#14B8A6" />
-                      </View>
-                      <Text style={styles.menuLabel}>Quick Replies</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/export'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#84CC16' + '20' }]}>
-                        <Ionicons name="download" size={22} color="#84CC16" />
-                      </View>
-                      <Text style={styles.menuLabel}>Export</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Creative & Tools */}
-                  <Text style={styles.menuSectionTitle}>Creative & Tools</Text>
-                  <View style={styles.menuGrid}>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/imagegen'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.success + '20' }]}>
-                        <Ionicons name="image" size={22} color={METALLIC.success} />
-                      </View>
-                      <Text style={styles.menuLabel}>HD Images</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/videogen'); }} data-testid="menu-videogen-btn">
-                      <View style={[styles.menuIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
-                        <Ionicons name="videocam" size={22} color="#8B5CF6" />
-                      </View>
-                      <Text style={styles.menuLabel}>HD Videos</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/image-editor'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#A855F7' + '20' }]}>
-                        <Ionicons name="brush" size={22} color="#A855F7" />
-                      </View>
-                      <Text style={styles.menuLabel}>Image Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/tools'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#F97316' + '20' }]}>
-                        <Ionicons name="construct" size={22} color="#F97316" />
-                      </View>
-                      <Text style={styles.menuLabel}>Tools</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Settings */}
-                  <Text style={styles.menuSectionTitle}>Settings & Network</Text>
-                  <View style={styles.menuGrid}>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agentchat'); }} data-testid="menu-agent-chat">
-                      <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' + '20' }]}>
-                        <Ionicons name="chatbubbles" size={22} color="#F59E0B" />
-                      </View>
-                      <Text style={styles.menuLabel}>Agent Chat</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/approvals'); }} data-testid="menu-approvals">
-                      <View style={[styles.menuIcon, { backgroundColor: '#EF4444' + '20' }]}>
-                        <Ionicons name="shield-checkmark" size={22} color="#EF4444" />
-                        {pendingApprovalsCount > 0 && (
-                          <View style={styles.notificationBadge}>
-                            <Text style={styles.notificationBadgeText}>{pendingApprovalsCount}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.menuLabel}>Approvals</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/agents-dashboard'); }} data-testid="menu-agents-dashboard">
-                      <View style={[styles.menuIcon, { backgroundColor: '#10B981' + '20' }]}>
-                        <Ionicons name="people" size={22} color="#10B981" />
-                      </View>
-                      <Text style={styles.menuLabel}>Agent Network</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/settings'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: '#6B7280' + '20' }]}>
-                        <Ionicons name="settings" size={22} color="#6B7280" />
-                      </View>
-                      <Text style={styles.menuLabel}>Agent Config</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/devin-lab'); }} data-testid="menu-devin-lab">
-                      <View style={[styles.menuIcon, { backgroundColor: '#22C55E' + '20' }]}> 
-                        <Ionicons name="sparkles" size={22} color="#22C55E" />
-                      </View>
-                      <Text style={styles.menuLabel}>Devin Lab</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/stats'); }}>
-                      <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
-                        <Ionicons name="analytics" size={22} color={METALLIC.accent} />
-                      </View>
-                      <Text style={styles.menuLabel}>Stats</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Account */}
-                  <Text style={styles.menuSectionTitle}>Account</Text>
-
-                  {/* Admin-only button */}
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.adminButton}
-                      onPress={() => { setShowMenu(false); router.push('/admin'); }}
-                      data-testid="admin-console-btn"
-                    >
-                      <Ionicons name="shield" size={18} color="#EF4444" />
-                      <Text style={styles.adminButtonText}>Admin Console</Text>
-                      <Ionicons name="chevron-forward" size={14} color="#EF4444" />
-                    </TouchableOpacity>
-                  )}
-
-                  <View style={styles.userCard}>
-                    <View style={styles.userInfo}>
-                      <View style={styles.userAvatar}>
-                        <Ionicons name="person" size={20} color={METALLIC.platinum} />
-                      </View>
-                      <View>
-                        <Text style={styles.userName}>{user?.name || 'User'}</Text>
-                        <Text style={styles.userEmail}>{user?.email || ''}</Text>
+              {/* Quick examples */}
+              <View style={styles.examplesCard}>
+                <Text style={styles.examplesTitle}>Example Tasks</Text>
+                {[
+                  { title: 'List project files', task: 'List all files in /app and summarize the project structure' },
+                  { title: 'Check server logs', task: 'Read the last 50 lines of /var/log/supervisor/backend.err.log' },
+                  { title: 'Find TODOs', task: 'Search for all TODO comments in the codebase' },
+                ].map((ex, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.exampleItem}
+                    onPress={() => {
+                      setTitle(ex.title);
+                      setTaskText(ex.task);
+                    }}
+                    data-testid={`example-${i}`}
+                  >
+                    <Ionicons name="flash-outline" size={16} color={C.accent} />
+                    <Text style={styles.exampleText}>{ex.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          ) : activeTab === 'queue' ? (
+            // ============ QUEUE TAB ============
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              {tasks.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="cube-outline" size={48} color={C.muted} />
+                  <Text style={styles.emptyText}>No tasks in queue</Text>
+                  <TouchableOpacity onPress={() => setActiveTab('create')}>
+                    <Text style={styles.emptyLink}>Create your first task</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                tasks.map((task) => (
+                  <View key={task.id} style={styles.taskCard} data-testid={`task-${task.id}`}>
+                    <View style={styles.taskHeader}>
+                      <Text style={styles.taskTitle}>{task.title}</Text>
+                      <View style={[styles.riskBadge, { borderColor: getRiskColor(task.risk_level) }]}>
+                        <Text style={[styles.riskText, { color: getRiskColor(task.risk_level) }]}>
+                          {task.risk_level.toUpperCase()}
+                        </Text>
                       </View>
                     </View>
-                    <TouchableOpacity 
-                      style={styles.logoutButton}
-                      onPress={() => {
-                        setShowMenu(false);
-                        handleQuickLogout();
-                      }}
-                      data-testid="menu-logout-button"
-                      testID="menu-logout-button"
-                      dataSet={{ testid: 'menu-logout-button' }}
-                    >
-                      <Ionicons name="log-out-outline" size={20} color={METALLIC.danger} />
-                      <Text style={styles.menuLogoutText}>Logout</Text>
-                    </TouchableOpacity>
+
+                    <Text style={styles.taskBody} numberOfLines={3}>{task.task}</Text>
+
+                    <View style={styles.taskMeta}>
+                      <Text style={styles.metaText}>
+                        {task.status.toUpperCase()} • {task.priority} priority • {task.run_count} runs
+                      </Text>
+                    </View>
+
+                    {task.last_run_summary && (
+                      <Text style={styles.summaryText} numberOfLines={2}>{task.last_run_summary}</Text>
+                    )}
+                    {task.last_error && <Text style={styles.errorText} numberOfLines={2}>{task.last_error}</Text>}
+
+                    <View style={styles.taskActions}>
+                      {task.requires_approval && !task.is_approved ? (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.approveBtn]}
+                          onPress={() => void approveTask(task.id)}
+                          data-testid={`approve-${task.id}`}
+                        >
+                          <Ionicons name="shield-checkmark" size={14} color="#fff" />
+                          <Text style={styles.actionText}>Approve</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, styles.dryBtn]}
+                            onPress={() => void runTask(task.id, true)}
+                            data-testid={`dry-run-${task.id}`}
+                          >
+                            <Ionicons name="eye" size={14} color="#fff" />
+                            <Text style={styles.actionText}>Dry Run</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, styles.liveBtn]}
+                            onPress={() => void runTask(task.id, false)}
+                            data-testid={`live-run-${task.id}`}
+                          >
+                            <Ionicons name="play" size={14} color="#fff" />
+                            <Text style={styles.actionText}>Run Live</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.deleteBtn]}
+                        onPress={() => void deleteTask(task.id)}
+                        data-testid={`delete-${task.id}`}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={C.danger} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </ScrollView>
-              </LinearGradient>
-            </View>
-          </View>
-        </Modal>
+                ))
+              )}
+            </ScrollView>
+          ) : (
+            // ============ HISTORY TAB ============
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              {runs.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="time-outline" size={48} color={C.muted} />
+                  <Text style={styles.emptyText}>No runs yet</Text>
+                </View>
+              ) : (
+                runs.map((run) => (
+                  <View key={run.id} style={styles.runCard} data-testid={`run-${run.id}`}>
+                    <View style={styles.runHeader}>
+                      <View style={[styles.runStatus, run.status === 'completed' ? styles.statusSuccess : styles.statusFailed]}>
+                        <Text style={styles.runStatusText}>{run.status.toUpperCase()}</Text>
+                      </View>
+                      <View style={run.dry_run ? styles.dryBadge : styles.liveBadge}>
+                        <Text style={styles.badgeText}>{run.dry_run ? 'DRY' : 'LIVE'}</Text>
+                      </View>
+                      <Text style={styles.runIterations}>{run.iterations} iterations</Text>
+                    </View>
+                    <Text style={styles.runSummary}>{run.response_summary || 'No summary'}</Text>
+                    <Text style={styles.runDate}>
+                      {new Date(run.created_at).toLocaleString()}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -1124,610 +510,233 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  header: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  headerGradient: {
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // Auth styles
+  authContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  authCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  authLogo: { marginBottom: 20 },
+  logoGradient: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authTitle: { fontSize: 28, fontWeight: '700', color: C.text, marginBottom: 8 },
+  authSubtitle: { fontSize: 14, color: C.muted, marginBottom: 24 },
+  authInput: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    padding: 16,
+    color: C.text,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 12,
+  },
+  authError: { color: C.danger, fontSize: 13, marginBottom: 12 },
+  authButton: {
+    width: '100%',
+    backgroundColor: C.accent,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  authButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Header
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
-  headerButton: { padding: 6 },
-  headerLogoutPill: {
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLogo: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: C.text },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerBtn: { padding: 8 },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+  },
+  logoutText: { color: C.danger, fontSize: 13, fontWeight: '600' },
+
+  // Tabs
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  tabActive: { backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)' },
+  tabText: { fontSize: 13, fontWeight: '600', color: C.muted },
+  tabTextActive: { color: C.accent },
+
+  // Content
+  content: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+
+  // Cards
+  card: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 16,
+  },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: C.text, marginBottom: 6 },
+  cardSubtitle: { fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 18 },
+
+  // Inputs
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    padding: 14,
+    color: C.text,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 12,
+  },
+  textArea: { minHeight: 120, textAlignVertical: 'top' },
+  labelSmall: { fontSize: 12, fontWeight: '600', color: C.muted, marginBottom: 8, textTransform: 'uppercase' },
+
+  // Priority
+  priorityRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  priorityPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+  },
+  priorityPillActive: { borderColor: C.accent, backgroundColor: 'rgba(34,197,94,0.1)' },
+  priorityText: { fontSize: 12, fontWeight: '700', color: C.muted },
+  priorityTextActive: { color: C.accent },
+
+  // Buttons
+  createBtn: { borderRadius: 12, overflow: 'hidden' },
+  createBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  createBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btnDisabled: { opacity: 0.5 },
+
+  // Examples
+  examplesCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  examplesTitle: { fontSize: 14, fontWeight: '600', color: C.muted, marginBottom: 12 },
+  exampleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  exampleText: { fontSize: 14, color: C.text },
+
+  // Empty state
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyText: { fontSize: 16, color: C.muted, marginTop: 16 },
+  emptyLink: { fontSize: 14, color: C.accent, marginTop: 8, fontWeight: '600' },
+
+  // Task cards
+  taskCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 12,
+  },
+  taskHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  taskTitle: { fontSize: 16, fontWeight: '700', color: C.text, flex: 1 },
+  riskBadge: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  riskText: { fontSize: 10, fontWeight: '700' },
+  taskBody: { fontSize: 13, color: C.muted, marginBottom: 10, lineHeight: 18 },
+  taskMeta: { marginBottom: 8 },
+  metaText: { fontSize: 11, color: C.muted },
+  summaryText: { fontSize: 12, color: C.text, marginBottom: 6, lineHeight: 17 },
+  errorText: { fontSize: 12, color: C.danger, marginBottom: 6 },
+  taskActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginLeft: 6,
-  },
-  headerLogoutText: {
-    color: METALLIC.silver,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  agentInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' },
-  avatarContainer: { marginRight: 10 },
-  avatarGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  avatarInner: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: METALLIC.darkSteel,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarRing: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  agentTextContainer: { alignItems: 'flex-start' },
-  agentName: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum, letterSpacing: 0.5 },
-  statusContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
-  statusText: { fontSize: 10, color: METALLIC.titanium, textTransform: 'uppercase', letterSpacing: 1 },
-  adultBadgeSmall: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  adultBadgeText: { fontSize: 8, fontWeight: '700', color: METALLIC.danger },
-  chatContainer: { flex: 1 },
-  messagesContainer: { flex: 1 },
-  messagesContent: { padding: 16, paddingBottom: 20 },
-  messageContainer: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
-  userMessageContainer: { justifyContent: 'flex-end' },
-  assistantMessageContainer: { justifyContent: 'flex-start' },
-  avatarSmall: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  messageBubble: { maxWidth: width * 0.75, borderRadius: 16, overflow: 'hidden' },
-  userBubble: { borderBottomRightRadius: 4 },
-  assistantBubble: { borderBottomLeftRadius: 4 },
-  bubbleGradient: { paddingHorizontal: 14, paddingVertical: 10 },
-  messageText: { fontSize: 15, color: METALLIC.platinum, lineHeight: 21 },
-  userMessageText: { color: '#fff' },
-  toolContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 6 },
-  toolBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-  },
-  toolText: { fontSize: 10, fontWeight: '600', color: METALLIC.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
-  messageActions: { flexDirection: 'row', marginLeft: 6, gap: 4 },
-  actionButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: METALLIC.gunmetal,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonActive: { backgroundColor: 'rgba(99, 102, 241, 0.2)' },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: height * 0.05 },
-  emptyAvatar: { marginBottom: 20 },
-  emptyAvatarGradient: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  emptyAvatarInner: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: METALLIC.darkSteel,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyAvatarRing: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  emptyTitle: { fontSize: 24, fontWeight: '600', color: METALLIC.platinum, marginBottom: 6, letterSpacing: 0.5 },
-  emptySubtitle: { fontSize: 14, color: METALLIC.titanium, textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
-  suggestionContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 24, gap: 10 },
-  suggestionChip: { borderRadius: 20, overflow: 'hidden' },
-  suggestionGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  suggestionText: { fontSize: 12, fontWeight: '600' },
-  statsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 24,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  statItem: { alignItems: 'center', paddingHorizontal: 14 },
-  statValue: { fontSize: 16, fontWeight: '600', color: METALLIC.platinum, textTransform: 'capitalize' },
-  statLabel: { fontSize: 10, color: METALLIC.titanium, marginTop: 2, textTransform: 'uppercase', letterSpacing: 1 },
-  statDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.1)' },
-  featureCards: { flexDirection: 'row', marginTop: 20, gap: 12 },
-  featureCard: { flex: 1, borderRadius: 14, overflow: 'hidden' },
-  featureGradient: { padding: 16, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  featureTitle: { fontSize: 14, fontWeight: '600', color: METALLIC.platinum },
-  featureDesc: { fontSize: 11, color: METALLIC.titanium },
-  loadingContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  typingIndicator: { borderRadius: 16, borderBottomLeftRadius: 4, overflow: 'hidden' },
-  typingGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
-  typingDots: { flexDirection: 'row', gap: 4 },
-  dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: METALLIC.silver },
-  typingText: { fontSize: 12, color: METALLIC.titanium, letterSpacing: 0.5 },
-  authRecoveryContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  authRecoveryTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: METALLIC.platinum,
-  },
-  authRecoverySubtitle: {
-    fontSize: 14,
-    color: METALLIC.titanium,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 420,
-  },
-  authRecoveryActions: {
-    marginTop: 12,
-    width: '100%',
-    maxWidth: 320,
-    gap: 10,
-  },
-  authRecoveryPrimary: {
-    backgroundColor: METALLIC.accent,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  authRecoveryPrimaryText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  authRecoverySecondary: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  authRecoverySecondaryText: {
-    color: METALLIC.silver,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  inputWrapper: { paddingHorizontal: 12, paddingBottom: Platform.OS === 'ios' ? 6 : 12, paddingTop: 6 },
-  inputGradient: { borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 4, paddingRight: 4, paddingVertical: 4 },
-  inputIcon: { padding: 8 },
-  inputIconRecording: { backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 20 },
-  input: { flex: 1, fontSize: 15, color: METALLIC.platinum, maxHeight: 100, paddingTop: 8, paddingBottom: 8 },
-  sendButton: { borderRadius: 18, overflow: 'hidden' },
-  sendButtonDisabled: { opacity: 0.6 },
-  sendGradient: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  // Menu styles
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
-  },
-  menuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  menuContainer: {
-    height: Math.min(height * 0.86, 760),
-    minHeight: Math.min(height * 0.68, 520),
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: 'hidden',
-  },
-  menuGradient: {
-    flex: 1,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  menuHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  menuQuickLogoutButton: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.28)',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.55)',
-    marginBottom: 14,
-  },
-  menuQuickLogoutText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-  menuTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: METALLIC.platinum,
-    letterSpacing: 0.5,
-  },
-  menuScroll: {
-    flex: 1,
-  },
-  menuSectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: METALLIC.titanium,
-    marginTop: 16,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
-  menuGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -4,
-  },
-  menuItem: {
-    width: '25%',
-    paddingHorizontal: 4,
-    paddingBottom: 16,
-    alignItems: 'center',
-  },
-  menuIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: METALLIC.silver,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#EF4444',
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  notificationBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  agentNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  agentPickerContainer: {
-    backgroundColor: METALLIC.darkSteel,
-    borderRadius: 16,
-    padding: 16,
-    width: '85%',
-    maxHeight: '70%',
-    alignSelf: 'center',
-    marginTop: 100,
-  },
-  agentPickerTitle: {
-    color: METALLIC.chrome,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  agentPickerList: {
-    maxHeight: 400,
-  },
-  agentPickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  agentPickerItemActive: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    borderWidth: 1,
-    borderColor: '#8B5CF6',
-  },
-  agentPickerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  agentPickerAvatarText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  agentPickerInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  agentPickerName: {
-    color: METALLIC.chrome,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  agentPickerType: {
-    color: METALLIC.titanium,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  userCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 8,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: METALLIC.gunmetal,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-  },
-  userEmail: {
-    fontSize: 12,
-    color: METALLIC.titanium,
-  },
-  logoutButton: {
     paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderRadius: 8,
+  },
+  actionText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  approveBtn: { backgroundColor: '#F59E0B' },
+  dryBtn: { backgroundColor: C.success },
+  liveBtn: { backgroundColor: C.purple },
+  deleteBtn: { backgroundColor: 'rgba(239,68,68,0.15)', marginLeft: 'auto' },
+
+  // Run cards
+  runCard: {
+    backgroundColor: C.card,
+    borderRadius: 12,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  menuLogoutText: {
-    color: METALLIC.danger,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  adminButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderRadius: 10,
-    padding: 12,
+    borderColor: C.border,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.2)',
   },
-  adminButtonText: {
-    color: '#EF4444',
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  danger: {
-    color: '#EF4444',
-  },
-  // 3D Hero Section Styles
-  heroSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-    position: 'relative',
-  },
-  heroRings: {
-    position: 'absolute',
-    top: 0,
-    left: '50%',
-    marginLeft: -100,
-  },
-  heroAvatar: {
-    marginBottom: 16,
-    zIndex: 10,
-  },
-  heroAvatarGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 15,
-  },
-  heroAvatarInner: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: METALLIC.platinum,
-    letterSpacing: 1,
-    textShadowColor: 'rgba(99,102,241,0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-  heroSubtitle: {
-    fontSize: 14,
-    color: METALLIC.titanium,
-    marginTop: 4,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: METALLIC.titanium,
-    letterSpacing: 2,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  suggestionScroll: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  suggestion3D: {
-    width: 160,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  suggestion3DGradient: {
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 16,
-  },
-  suggestion3DIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  suggestion3DText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: METALLIC.platinum,
-    flex: 1,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-    marginTop: 32,
-    marginBottom: 24,
-  },
-  quickAction: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  quickActionGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  quickActionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: METALLIC.silver,
-  },
-  modelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'center',
-  },
-  modelDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: METALLIC.success,
-  },
-  modelText: {
-    fontSize: 11,
-    color: METALLIC.titanium,
-  },
+  runHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  runStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusSuccess: { backgroundColor: 'rgba(16,185,129,0.2)' },
+  statusFailed: { backgroundColor: 'rgba(239,68,68,0.2)' },
+  runStatusText: { fontSize: 10, fontWeight: '700', color: C.text },
+  dryBadge: { backgroundColor: 'rgba(34,197,94,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4 },
+  liveBadge: { backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4 },
+  badgeText: { fontSize: 9, fontWeight: '700', color: C.text },
+  runIterations: { fontSize: 11, color: C.muted },
+  runSummary: { fontSize: 13, color: C.text, lineHeight: 18, marginBottom: 6 },
+  runDate: { fontSize: 11, color: C.muted },
 });

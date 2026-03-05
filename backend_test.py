@@ -277,7 +277,7 @@ class DevinOpsAPITester:
 
 def main():
     # Configuration from review request
-    BASE_URL = "https://aurora-forge-1.preview.emergentagent.com"
+    BASE_URL = "https://aurora-devin-lab.preview.emergentagent.com"
     ADMIN_KEY = "forge_master_2025"
     
     # Run tests

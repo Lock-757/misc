@@ -1,209 +1,89 @@
-# Aurora AI (Agent Forge) - Product Requirements
+# Devin Lab - Product Requirements Document
 
 ## Original Problem Statement
-Build a visually appealing, functional mobile/web AI app called "Agent Forge" (rebranded "Aurora"). Core: a chat interface for an intelligent AI agent with tool generation capability.
+The user wants a focused AI agent app centered on "Devin" - a super-agent capable of:
+- Running shell commands
+- Reading/writing files
+- Executing complex automation tasks
+- Self-improvement capabilities
+- All operations gated by user approval for safety
 
-## Target Audience
-- Primary user: The owner/creator (admin) who controls all settings
-- Secondary: Registered users who interact with the AI agent
+The user explicitly requested to **strip away non-essentials** and focus entirely on Devin's capabilities.
 
-## Core Requirements
-- **Chat Interface**: Intelligent agent chat with streaming responses
-- **LLM**: Gemini 2.5 Flash (via Emergent integrations) for chat; Grok kept for image generation
-- **Auth**: Email/password + Google OAuth, JWT sessions, user-specific data isolation
-- **Admin Role**: Master password bypass (`forge_master_2025`), no content filters, no "18+" badge
-- **Image Generation**: HD images via Grok (`grok-imagine-image`)
-- **Image Editing**: AI prompt-based image editing
-- **Conversation History**: View, resume, delete past conversations
-- **Content Filter**: Hidden in Settings > Advanced; admin bypasses entirely
-- **Dynamic Suggestions**: Rotating prompt suggestions on main screen
-- **3D Animated UI**: "Aurora" high-tech aesthetic with animated orbs and backgrounds
+## What Was Removed (Decluttered)
+- Multi-agent system (agent creation, personalities, agent-to-agent communication)
+- Tool trading/credit economy between agents
+- Image/Video generation (Grok features)
+- Complex user authentication (email/password, Google Sign-in)
+- 20+ frontend pages (agents, settings, history, templates, bookmarks, etc.)
+- Agent memories and collective knowledge UI
 
-## Architecture
+## Current Architecture
+
+### Frontend (Lean)
 ```
-/app
-├── backend/
-│   ├── server.py         # FastAPI: Auth, Chat, Image Gen, Agents, History
-│   ├── .env              # MONGO_URL, DB_NAME, GROK_API_KEY
-│   └── requirements.txt
-└── frontend/
-    ├── app/
-    │   ├── context/AuthContext.tsx (at /app/frontend/context/AuthContext.tsx)
-    │   ├── components/AnimatedBackground.tsx
-    │   ├── _layout.tsx, index.tsx, login.tsx, auth-callback.tsx
-    │   ├── history.tsx, imagegen.tsx, image-editor.tsx
-    │   ├── settings.tsx, agents.tsx, stats.tsx, tools.tsx
-    │   └── (15+ feature screens)
-    ├── app.json           # web.output="single", no newArchEnabled
-    ├── .env               # EXPO_PUBLIC_BACKEND_URL
-    └── package.json
+/app/frontend/app/
+├── _layout.tsx     # Minimal layout with single route
+└── index.tsx       # Devin Lab - all-in-one interface
 ```
 
-## Tech Stack
-- **Frontend**: Expo 54, React Native 0.81.5, Expo Router, TypeScript, Axios
-- **Backend**: Python, FastAPI, Motor (async MongoDB), Pydantic
-- **Database**: MongoDB (`test_database`)
-- **Auth**: JWT sessions stored in MongoDB `user_sessions` collection
-- **Token Storage**: `expo-secure-store` (native) / `localStorage` (web)
-- **API**: Grok API for chat + image generation
+### Backend (Core Devin APIs)
+```
+/app/backend/server.py
+├── POST /api/devin/tasks          # Create task
+├── GET  /api/devin/tasks          # List tasks
+├── POST /api/devin/tasks/{id}/approve-risk  # Approve high-risk
+├── DELETE /api/devin/tasks/{id}   # Delete task
+├── POST /api/devin/tasks/{id}/run # Execute task (dry/live)
+└── GET  /api/devin/runs           # Run history
+```
 
-## Key DB Schema
-- `users`: `{user_id, email, name, hashed_password, google_id}`
-- `conversations`: `{id, user_id, agent_id, messages[], created_at}`
-- `agents`: `{id, name, avatar, system_prompt, model, adult_mode}`
-- `user_sessions`: `{session_token, user_id, expires_at}`
+### Core Features
+1. **Admin-Only Access** - Simple password gate (`forge_master_2025`)
+2. **Task Creation** - Title, description, priority (low/normal/high)
+3. **Risk Assessment** - Automatic classification (low/medium/high)
+4. **Approval Workflow** - High-risk tasks require explicit approval
+5. **Dry Run Mode** - Preview execution without credits
+6. **Live Run Mode** - Actual execution using Grok LLM
+7. **Run History** - Track all executions with summaries
 
-## Admin Credentials
-- Password: `forge_master_2025` (any email + this password bypasses normal auth)
-- Stored as `forge_admin: "true"` in SecureStore/localStorage
+### Devin's Capabilities
+- Shell command execution
+- File system read/write
+- Project exploration
+- Code analysis
+- System administration tasks
+- Self-modification (with approval)
 
-## Key API Endpoints
-- `POST /api/auth/register` — Register user, returns `session_token`
-- `POST /api/auth/login` — Login, returns `session_token`
-- `GET /api/auth/me` — Validate session (token via cookie or `Authorization: Bearer`)
-- `POST /api/auth/logout` — Invalidate session
-- `POST /api/auth/google/session` — Google OAuth callback
-- `GET/POST /api/agents` — List/create agents
-- `POST /api/chat` — Send message, requires `user_id`
-- `GET /api/conversations` — User conversations (filtered by `user_id`)
-- `POST /api/generate-image` — HD image via Grok, `is_admin` flag bypasses filters
+## Database Collections
+- `devin_tasks` - Task queue
+- `devin_runs` - Execution history
+- `agents` - Agent configurations (includes Devin)
 
----
+## Environment Variables
+- `EXPO_PUBLIC_ADMIN_SECRET` - Admin password
+- `GROK_API_KEY` - Grok LLM API key
+- `MONGO_URL` - MongoDB connection
 
-## What's Been Implemented
+## Completed (March 5, 2026)
+- [x] Stripped 20+ frontend pages down to single Devin Lab page
+- [x] Simplified auth to admin-only password gate
+- [x] Removed AuthContext and complex auth flows
+- [x] Cleaned up layout to single route
+- [x] Added delete task endpoint
+- [x] Tested all core functionality (create, queue, approve, run, history)
 
-### Session 1 (Previous)
-- Full User Auth (email/password + Google OAuth)
-- Admin Role + master password bypass
-- 3D animated "Aurora" main screen redesign
-- Image Generation (Grok `grok-imagine-image` model)
-- Conversation History with resume functionality
-- User-specific data isolation
-- Image Editor with keyboard handling
-- Dynamic rotating prompt suggestions
-- Content Filter hidden in Settings > Advanced
+## Next Steps (P0)
+1. **Execution Quality Scoring** - Rate Devin's task completion quality
+2. **Auto-Retry Heuristics** - Automatically retry failed tasks with adjustments
+3. **Dry Run Preview** - Show expected actions before execution
 
-### Session 5 (2026-03-03) — Agent Dashboard Enhancement
-- **Agent Profile Tabs**: Added Activity, Goals, and Reputation tabs to agent detail view
-- **Data Display**: Dashboard now fetches and displays Journal entries, Goals (with progress bars), Reputation scores, and Specializations for each agent
-- **Backend endpoints verified**: `/api/agents/{id}/journal`, `/api/agents/{id}/goals`, `/api/agents/{id}/reputation`, `/api/agents/{id}/specializations`
+## Future Enhancements (P1/P2)
+- Task templates for common operations
+- Scheduled/recurring tasks
+- Real-time execution logs streaming
+- Task chaining (dependent tasks)
+- Export run history to markdown
 
-### Session 6 (2026-03-04) — Grok Video Fix + Chat Keyboard Stability
-- **Grok video generation fixed**: Hardened `/api/generate-video` polling/parser logic in `backend/server.py` to support multiple provider response structures (including `status: done` + `video` URL string/object) and prevent "No video data in response" regression.
-- **Mobile keyboard spacing improvements**:
-  - Main chat (`frontend/app/index.tsx`): safe-area aware bottom spacing and keyboard offset tuning for input/send row.
-  - Agent chat (`frontend/app/agentchat.tsx`): added `KeyboardAvoidingView` + safe-area aware input row spacing.
-- **Testability improvements**: Added/expanded `data-testid` coverage on key chat controls touched in this fix batch.
-- **Verification**:
-  - Manual curl confirmed `/api/generate-video` returns `200` with non-empty `video_base64`.
-  - Testing agent report `iteration_4.json` passed targeted backend/frontend regressions (video, grid menu, mobile input visibility).
-
-### Session 7 (2026-03-04) — Session Recovery + Grid/Menu Stability + Devin Visibility
-- **Session recovery hardening**:
-  - Added `resetSession()` flow in `frontend/context/AuthContext.tsx` to clear stale admin/session state.
-  - Added login screen `Reset Session` action in `frontend/app/login.tsx`.
-  - Replaced blank unauthenticated state in `frontend/app/index.tsx` with a recovery UI (Go to Login / Reset Session).
-- **Logout discoverability & reliability**:
-  - Added explicit logout affordances and web-safe logout behavior in `frontend/app/index.tsx`.
-  - Header left control now performs immediate logout on web (no hidden alert dependency).
-  - Added persistent quick logout action in grid menu.
-- **Grid/menu reliability**:
-  - Modal overlay updated to explicit `Pressable` backdrop close behavior.
-  - Grid menu open/close behavior revalidated on web.
-- **Devin visibility & agent consistency**:
-  - Added backend `ensure_core_agents()` safeguard in `backend/server.py` called from `GET /api/agents` to ensure Aurora + Devin exist.
-  - Extended `AgentConfig`/create/update models with `has_tools` support.
-  - Agent list UI (`frontend/app/agents.tsx`) now prioritizes Devin/Devon at top and confirms tool-agent label.
-- **Verification**:
-  - Web smoke checks: login works, grid menu opens (`Features` visible), direct `/agents` shows `Devin`.
-  - Top-left logout action returns user to `/login` after Expo service refresh.
-
-### Session 4 (2026-03-02) — HD Video Generation & Cognitive Tools System
-- **HD Video Generation**: Implemented Sora 2 video generation via Emergent LLM Key
-  - Backend: New endpoints `/api/generate-video`, `/api/generated-videos`, `/api/delete-generated-video`
-  - Frontend: New screen `/videogen` with options for resolution (HD 1280x720, Wide 1792x1024, Portrait 1024x1792, Square 1024x1024), duration (4s, 8s, 12s), and model (Sora 2, Sora 2 Pro)
-  - Videos stored in MongoDB `generated_videos` collection with user isolation
-  - Video preview with web HTML5 video player, download support
-  - Progress indicator during generation (2-5 minutes typical)
-- **Cognitive Tools System**: Aurora can now generate and use internal cognitive tools
-  - 5 Built-in tools: NOVELTY_CHECK, CHANGE_DETECT, META_REASON, CONTEXT_EXPAND, CONFIDENCE_CHECK
-  - User-defined tools persist in MongoDB `cognitive_tools` collection
-  - Aurora uses tools in responses to enhance reasoning
-  - New endpoint: `/api/cognitive-tools` to view all available tools
-- **Menu Update**: Added "HD Videos" button in Creative & Tools section of main menu
-- **Grid Menu Fix**: Fixed TouchableOpacity event propagation issue
-- **All Previous Features Verified**: Testing agent confirmed 100% backend pass rate (34/34 tests)
-
-### Session 3 (2026-03-02) — Admin Page, Privacy, Features Batch
-- **Admin Console page** (`/admin`): User list with chat/image/download counts, per-user conversation viewer, download logs, platform stats. Admin-only access enforced by `X-Admin-Key` header
-- **Admin Console button** in index.tsx menu: Only visible when `isAdmin === true`, navigates to `/admin`
-- **Logout button**: Present in main menu, navigates to `/login`
-- **Admin auto-logout**: AppState listener in `index.tsx` — admin is logged out when app goes to background/inactive
-- **Session adult_mode toggle**: Type "adult_mode" in chat to enable for current session only (no API call, no storage)
-- **Login fix**: Auth-state-driven navigation via `useEffect` watching `isAuthenticated` — fixed modal race condition
-- **Download tracking**: `POST /api/track-download` logs silently per download; accessible in admin console Downloads tab
-- **Image download button**: Green download icon in preview modal + gallery thumbnail overlay. Web: triggers browser download; native: saves to media library
-- **Image styles fixed**: Style presets PREPENDED to prompt (stronger influence). Added Cinematic, Photo, Oil Paint, Cyberpunk, Minimal presets
-- **AgentConfig fix**: `system_prompt` now defaults properly when null/None on agent create
-- **User data isolation (session 2 fix extended)**: Chat endpoint uses session `user_id`, not body `user_id`
-- **P0 Production Fix**: Changed `app.json` `web.output` from `"static"` to `"single"` (SPA mode) + removed `newArchEnabled:true` to fix blank white screen on deployment
-- **P1 Session Persistence**: Refactored `AuthContext.tsx` `initialize()` to run admin check first, then token check sequentially (no race condition). Only removes token on HTTP 401, not on network errors
-- **P2 Feature Menu Grid**: Fixed `menuGrid` styles — replaced `gap:16` + `width:22%` with reliable `width:25%` + `paddingHorizontal:4` for proper 4-column grid layout
-- **P3 18+ Badge**: Fixed badge condition to `agent.adult_mode === true && !isAdmin` (strict equality). Reset Aurora agent in MongoDB from `adult_mode:true` to `adult_mode:false`
-- **Critical Hooks Fix** (found by testing agent): Moved helper functions before conditional early returns in `index.tsx` to fix React "Rendered more hooks than during previous render" crash on page refresh
-- **JSX Syntax Fix** (found by testing agent): Fixed extra closing brace `')}}` → `')}'` in `index.tsx`
-
-### Session 8 (2026-03-05) — Devin Focused Upgrade (Cost-Safe)
-- **New Devin Ops backend APIs** in `backend/server.py`:
-  - `POST /api/devin/tasks` (queue task with risk classification)
-  - `GET /api/devin/tasks` (task queue)
-  - `POST /api/devin/tasks/{id}/approve-risk` (high-risk approval gate)
-  - `POST /api/devin/tasks/{id}/run` (supports `dry_run` to avoid model cost)
-  - `GET /api/devin/runs` (run history)
-- **Risk gating policy**: high-risk tasks (delete/production/secrets/security/legal markers) require approval before execution.
-- **Devin Lab UI added**: `frontend/app/devin-lab.tsx`
-  - Create task, risk-aware queue, approve-risk action, Dry Run and Live Run controls, run history.
-  - Added grid menu entry **Devin Lab** and route registration in `_layout.tsx`.
-- **Cost-effective default flow**: Dry Run path executes without external model calls, enabling safe iteration.
-- **Verification completed**:
-  - Frontend testing agent: Devin Lab flow passed (create task, dry run, queue/history updates, menu navigation).
-  - Backend testing agent: all Devin Ops API tests passed including high-risk 403 enforcement and post-approval success.
-
----
-
-## Prioritized Backlog
-
-### P0 — Critical
-- [x] HD Video Generation (Sora 2) — COMPLETED Session 4
-- [x] Grok video generation regression (`no data returned`) — FIXED Session 6
-- [x] Grid menu visibility/clickability regression check — VERIFIED Session 6
-- [x] Devin core visibility and core-agent guarantee (Aurora + Devin) — VERIFIED Session 7
-- [ ] Verify production deployment shows app correctly after `output:single` change
-
-### P1 — High Priority
-- [x] Devin task queue + dry-run autonomy scaffold + high-risk approval gate — COMPLETED Session 8
-- [ ] Keyboard overlap audit for remaining screens beyond main chat + agent chat (if user reports specific screen)
-- [ ] Voice-to-text on main chat screen (user request, deferred for cost assessment)
-- [ ] Integrate Claude API (placeholder exists)
-- [ ] Integrate Kimi LLM API (placeholder exists)
-- [ ] Agents should be user-scoped (currently global — all users share same agents)
-- [ ] Devin multi-step retry heuristics + execution quality scoring dashboard
-
-### P2 — Medium Priority
-- [ ] Further enhance 3D/high-tech UI (user request)
-- [ ] RAG (Retrieval Augmented Generation) support
-- [ ] File uploads for documents
-
-### P3 — Low Priority / Future
-- [ ] Multi-agent system
-- [ ] Biometric lock screen
-- [ ] Refresh tokens for more robust session management
-- [ ] Move admin password from hardcoded `AuthContext.tsx` to secure env variable
-- [ ] Scheduled tasks feature (screen exists but is placeholder)
-- [ ] Export conversations feature
-
-## Known Limitations
-- Admin secret is env-backed (`EXPO_PUBLIC_ADMIN_SECRET`) but still client-visible by design on web; keep admin-only actions server-validated.
-- Agents are global (not user-scoped) — all users share the same agents list
-- Voice recording on web is limited by browser permissions/APIs
-- Google OAuth only implemented for web, not native
+## Credentials
+- **Admin Password**: `forge_master_2025`

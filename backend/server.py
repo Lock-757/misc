@@ -3340,6 +3340,22 @@ async def approve_devin_task_risk(task_id: str, request: Request, session_token:
     return {"status": "approved", "task_id": task_id}
 
 
+@api_router.delete("/devin/tasks/{task_id}")
+async def delete_devin_task(task_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    actor = await get_actor_context(request, session_token)
+    task = await db.devin_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.get("created_by") != actor["user_id"] and not actor["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this task")
+
+    await db.devin_tasks.delete_one({"id": task_id})
+    # Also delete associated runs
+    await db.devin_runs.delete_many({"task_id": task_id})
+    return {"status": "deleted", "task_id": task_id}
+
+
 @api_router.post("/devin/tasks/{task_id}/run", response_model=DevinRunRecord)
 async def run_devin_task(
     task_id: str,

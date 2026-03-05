@@ -21,7 +21,7 @@ if not BASE_URL:
                     BASE_URL = line.split('=', 1)[1].strip()
                     break
     except:
-        BASE_URL = 'https://aurora-forge-1.preview.emergentagent.com'
+        BASE_URL = 'https://aurora-devin-lab.preview.emergentagent.com'
 
 ADMIN_KEY = 'forge_master_2025'
 ADMIN_HEADERS = {'X-Admin-Key': ADMIN_KEY}
