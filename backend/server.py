@@ -26,6 +26,13 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
 from emergentintegrations.llm.openai.video_generation import OpenAIVideoGeneration
 
+# Browser automation
+from playwright.async_api import async_playwright, Browser, Page
+
+# Global browser instance for Devin
+_browser_instance: Browser = None
+_browser_page: Page = None
+
 # ==================== AGENT TOOL EXECUTION ENGINE ====================
 
 WORKSPACE_DIR = "/app"  # Restricted workspace for agent file operations
@@ -49,6 +56,160 @@ def is_protected_file(path: str) -> bool:
         if path.startswith(protected) or path in PROTECTED_FILES:
             return True
     return False
+
+
+# ==================== BROWSER AUTOMATION FOR DEVIN ====================
+
+async def get_browser_page() -> Page:
+    """Get or create a browser page for Devin's screen interactions."""
+    global _browser_instance, _browser_page
+    
+    if _browser_instance is None:
+        playwright = await async_playwright().start()
+        _browser_instance = await playwright.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
+    
+    if _browser_page is None or _browser_page.is_closed():
+        _browser_page = await _browser_instance.new_page()
+        await _browser_page.set_viewport_size({"width": 1280, "height": 720})
+    
+    return _browser_page
+
+
+async def browser_navigate(url: str) -> str:
+    """Navigate to a URL and return page info."""
+    try:
+        page = await get_browser_page()
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+        title = await page.title()
+        current_url = page.url
+        return f"[Browser] Navigated to: {current_url}\nTitle: {title}"
+    except Exception as e:
+        return f"[Browser Error] Failed to navigate: {str(e)}"
+
+
+async def browser_screenshot(save_path: str = None) -> str:
+    """Take a screenshot of the current page."""
+    try:
+        page = await get_browser_page()
+        if save_path is None:
+            save_path = f"/app/devin_screenshots/screen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        await page.screenshot(path=save_path, full_page=False)
+        
+        return f"[Browser] Screenshot saved to: {save_path}\nCurrent URL: {page.url}"
+    except Exception as e:
+        return f"[Browser Error] Failed to take screenshot: {str(e)}"
+
+
+async def browser_click(selector: str = None, text: str = None) -> str:
+    """Click an element by selector or text."""
+    try:
+        page = await get_browser_page()
+        
+        if text:
+            # Click by text content
+            element = page.get_by_text(text, exact=False)
+            await element.click(timeout=10000)
+            return f"[Browser] Clicked element with text: '{text}'"
+        elif selector:
+            # Click by CSS selector
+            await page.click(selector, timeout=10000)
+            return f"[Browser] Clicked element: {selector}"
+        else:
+            return "[Browser Error] Must provide either 'selector' or 'text' attribute"
+    except Exception as e:
+        return f"[Browser Error] Failed to click: {str(e)}"
+
+
+async def browser_type(selector: str, text: str, clear_first: bool = True) -> str:
+    """Type text into an input field."""
+    try:
+        page = await get_browser_page()
+        
+        if clear_first:
+            await page.fill(selector, text, timeout=10000)
+        else:
+            await page.type(selector, text, timeout=10000)
+        
+        return f"[Browser] Typed '{text[:50]}...' into {selector}"
+    except Exception as e:
+        return f"[Browser Error] Failed to type: {str(e)}"
+
+
+async def browser_get_content() -> str:
+    """Get the text content of the current page."""
+    try:
+        page = await get_browser_page()
+        
+        # Get page text content
+        content = await page.inner_text("body")
+        
+        # Truncate if too long
+        if len(content) > 3000:
+            content = content[:3000] + "\n... [truncated]"
+        
+        return f"[Browser Page Content]\nURL: {page.url}\n\n{content}"
+    except Exception as e:
+        return f"[Browser Error] Failed to get content: {str(e)}"
+
+
+async def browser_get_elements(selector: str) -> str:
+    """Get information about elements matching a selector."""
+    try:
+        page = await get_browser_page()
+        
+        elements = await page.query_selector_all(selector)
+        if not elements:
+            return f"[Browser] No elements found matching: {selector}"
+        
+        results = []
+        for i, el in enumerate(elements[:20]):  # Limit to 20
+            tag = await el.evaluate("el => el.tagName")
+            text = await el.inner_text() if await el.is_visible() else "[hidden]"
+            text = text[:100] if text else "[empty]"
+            results.append(f"{i+1}. <{tag.lower()}> {text}")
+        
+        return f"[Browser] Found {len(elements)} elements matching '{selector}':\n" + "\n".join(results)
+    except Exception as e:
+        return f"[Browser Error] Failed to get elements: {str(e)}"
+
+
+async def browser_wait(selector: str = None, timeout_ms: int = 5000) -> str:
+    """Wait for an element or just wait for a time."""
+    try:
+        page = await get_browser_page()
+        
+        if selector:
+            await page.wait_for_selector(selector, timeout=timeout_ms)
+            return f"[Browser] Element appeared: {selector}"
+        else:
+            await page.wait_for_timeout(timeout_ms)
+            return f"[Browser] Waited {timeout_ms}ms"
+    except Exception as e:
+        return f"[Browser Error] Wait failed: {str(e)}"
+
+
+async def browser_scroll(direction: str = "down", amount: int = 500) -> str:
+    """Scroll the page."""
+    try:
+        page = await get_browser_page()
+        
+        if direction == "down":
+            await page.evaluate(f"window.scrollBy(0, {amount})")
+        elif direction == "up":
+            await page.evaluate(f"window.scrollBy(0, -{amount})")
+        elif direction == "top":
+            await page.evaluate("window.scrollTo(0, 0)")
+        elif direction == "bottom":
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        
+        return f"[Browser] Scrolled {direction}"
+    except Exception as e:
+        return f"[Browser Error] Scroll failed: {str(e)}"
 
 def parse_tool_calls(response_text: str) -> list:
     """Extract XML tool calls from agent response."""
@@ -75,6 +236,16 @@ def parse_tool_calls(response_text: str) -> list:
         (r'<recall_memories\s*/>', 'recall_memories'),
         (r'<share_knowledge[^>]*>(.*?)</share_knowledge>', 'share_knowledge'),
         (r'<get_shared_knowledge\s*/>', 'get_shared_knowledge'),
+        # Browser automation tools
+        (r'<browser_go[^>]*/>', 'browser_go'),
+        (r'<browser_screenshot[^>]*/>', 'browser_screenshot'),
+        (r'<browser_click[^>]*/>', 'browser_click'),
+        (r'<browser_type[^>]*>(.*?)</browser_type>', 'browser_type'),
+        (r'<browser_type[^>]*/>', 'browser_type'),
+        (r'<browser_read\s*/>', 'browser_read'),
+        (r'<browser_elements[^>]*/>', 'browser_elements'),
+        (r'<browser_wait[^>]*/>', 'browser_wait'),
+        (r'<browser_scroll[^>]*/>', 'browser_scroll'),
     ]
     
     for pattern, tool_type in patterns:
@@ -434,6 +605,54 @@ async def execute_tool(tool: dict, agent_id: str = None) -> str:
             await db.pending_changes.insert_one(pending)
             
             return f"[Self-Improvement Proposed]\nID: {change_id}\nStatus: PENDING APPROVAL\n\nYour improvement will take effect after user approval."
+        
+        # ===== BROWSER AUTOMATION TOOLS =====
+        
+        elif tool_type == 'browser_go':
+            attrs = extract_xml_attrs(raw)
+            url = attrs.get('url', '')
+            if not url:
+                return "[Error: Must provide url attribute]"
+            return await browser_navigate(url)
+        
+        elif tool_type == 'browser_screenshot':
+            attrs = extract_xml_attrs(raw)
+            save_path = attrs.get('path')
+            return await browser_screenshot(save_path)
+        
+        elif tool_type == 'browser_click':
+            attrs = extract_xml_attrs(raw)
+            selector = attrs.get('selector')
+            text = attrs.get('text')
+            return await browser_click(selector=selector, text=text)
+        
+        elif tool_type == 'browser_type':
+            attrs = extract_xml_attrs(raw)
+            selector = attrs.get('selector', '')
+            text_to_type = attrs.get('text', '') or content.strip()
+            if not selector:
+                return "[Error: Must provide selector attribute for browser_type]"
+            return await browser_type(selector, text_to_type)
+        
+        elif tool_type == 'browser_read':
+            return await browser_get_content()
+        
+        elif tool_type == 'browser_elements':
+            attrs = extract_xml_attrs(raw)
+            selector = attrs.get('selector', 'button, a, input')
+            return await browser_get_elements(selector)
+        
+        elif tool_type == 'browser_wait':
+            attrs = extract_xml_attrs(raw)
+            selector = attrs.get('selector')
+            timeout = int(attrs.get('timeout', '5000'))
+            return await browser_wait(selector=selector, timeout_ms=timeout)
+        
+        elif tool_type == 'browser_scroll':
+            attrs = extract_xml_attrs(raw)
+            direction = attrs.get('direction', 'down')
+            amount = int(attrs.get('amount', '500'))
+            return await browser_scroll(direction, amount)
         
         else:
             return f"[Unknown tool type: {tool_type}]"
@@ -941,6 +1160,8 @@ class DevinTaskCreate(BaseModel):
     title: str
     task: str
     priority: str = "normal"  # low, normal, high
+    next_task_id: Optional[str] = None  # Task chaining - run this task after completion
+    chain_on_success_only: bool = True  # Only chain if this task succeeds
 
 
 class DevinTask(BaseModel):
@@ -958,6 +1179,8 @@ class DevinTask(BaseModel):
     run_count: int = 0
     last_run_summary: str = ""
     last_error: str = ""
+    next_task_id: Optional[str] = None
+    chain_on_success_only: bool = True
 
 
 class DevinTaskRunRequest(BaseModel):
@@ -3277,10 +3500,11 @@ async def create_tool_agent(body: CreateToolAgentRequest):
 # ==================== DEVIN OPS ====================
 
 # Enhanced Devin System Prompt with Reasoning Framework
-DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with persistent memory and advanced reasoning capabilities.
+DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with persistent memory, advanced reasoning, and SCREEN CONTROL capabilities.
 
 ## CORE IDENTITY
 - You are a tool-enabled agent that can execute real commands on the system
+- You can SEE and INTERACT with browser screens like a human user
 - You persist across sessions - your memories and learnings carry forward
 - You think step-by-step, verify your work, and learn from failures
 
@@ -3288,19 +3512,40 @@ DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with p
 1. **UNDERSTAND**: Restate the task in your own words. What is the actual goal?
 2. **PLAN**: Break down into concrete steps. What tools will you use?
 3. **EXECUTE**: Run each step, checking output before proceeding
-4. **VERIFY**: Did the action succeed? Check file contents, command output, etc.
+4. **VERIFY**: Did the action succeed? Check file contents, command output, screenshots etc.
 5. **REFLECT**: What worked? What didn't? Save learnings to memory.
 
-## AVAILABLE TOOLS
+## FILE & SHELL TOOLS
 <shell exec_dir="/app">command</shell> - Execute shell commands
 <open_file path="/app/file.py" start_line="1" end_line="50"/> - Read file contents
 <create_file path="/app/newfile.py">content</create_file> - Create/overwrite files
 <str_replace path="/app/file.py"><old_str>old</old_str><new_str>new</new_str></str_replace> - Edit files
 <find_filecontent path="/app" regex="pattern"/> - Search in files
 <find_filename path="/app" glob="*.py"/> - Find files by name
+
+## BROWSER/SCREEN CONTROL TOOLS
+<browser_go url="https://example.com"/> - Navigate to a URL
+<browser_screenshot path="/app/screens/shot.png"/> - Take screenshot of current page
+<browser_click selector="#submit-btn"/> - Click element by CSS selector
+<browser_click text="Login"/> - Click element by text content
+<browser_type selector="input[name='email']" text="user@example.com"/> - Type into input field
+<browser_read/> - Get text content of current page
+<browser_elements selector="button, a"/> - List interactive elements on page
+<browser_wait selector=".loading" timeout="5000"/> - Wait for element to appear
+<browser_scroll direction="down" amount="500"/> - Scroll page (down/up/top/bottom)
+
+## MEMORY TOOLS
 <save_memory category="learning">What I learned...</save_memory> - Save to persistent memory
 <recall_memories/> - Retrieve your past memories
 <message_user>Important message for the user</message_user> - Communicate findings
+
+## SCREEN INTERACTION WORKFLOW
+When you need to interact with a UI:
+1. Navigate: <browser_go url="..."/>
+2. See: <browser_screenshot/> to capture what's on screen
+3. Find: <browser_elements/> to see clickable items
+4. Act: <browser_click/> or <browser_type/> to interact
+5. Verify: <browser_screenshot/> again to confirm result
 
 ## RULES
 - Always verify command output before proceeding
@@ -3472,6 +3717,81 @@ async def get_devin_agent_doc() -> Dict[str, Any]:
     return devin
 
 
+async def trigger_chained_task(task_id: str, actor: dict, request: Request):
+    """Trigger a chained task after the previous one completes."""
+    try:
+        task = await db.devin_tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task or task.get("status") != "queued":
+            return
+        
+        # Skip if requires approval
+        if task.get("requires_approval") and not task.get("is_approved"):
+            return
+        
+        devin = await get_devin_agent_doc()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        await db.devin_tasks.update_one(
+            {"id": task_id},
+            {"$set": {"status": "running", "updated_at": now}}
+        )
+        
+        # Run the task
+        result = await run_devin_with_retry(
+            devin_id=devin.get("id", ""),
+            task_text=task.get("task", ""),
+            max_retries=3,
+            max_iterations_per_run=8
+        )
+        
+        quality = result.get("quality_score", {})
+        
+        run_doc = {
+            "id": str(uuid.uuid4()),
+            "task_id": task_id,
+            "agent_id": devin.get("id", ""),
+            "created_by": actor["user_id"],
+            "status": "completed" if quality.get("score", 0) >= 40 else "failed",
+            "dry_run": False,
+            "iterations": result.get("iterations", 0),
+            "response": result.get("response", ""),
+            "response_summary": summarize_devin_output(result.get("response", "")),
+            "tool_results": result.get("tool_results", []),
+            "created_at": now,
+            "quality_score": quality.get("score"),
+            "quality_grade": quality.get("grade"),
+            "quality_feedback": quality.get("feedback", []),
+            "retry_attempts": result.get("total_attempts", 1),
+        }
+        
+        await db.devin_runs.insert_one(run_doc)
+        
+        final_status = run_doc["status"]
+        await db.devin_tasks.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "status": final_status,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "last_run_summary": run_doc["response_summary"],
+                    "last_error": "" if final_status == "completed" else f"Quality: {quality.get('score', 0)}",
+                },
+                "$inc": {"run_count": 1},
+            },
+        )
+        
+        # Continue chain if needed
+        if task.get("next_task_id"):
+            should_chain = True
+            if task.get("chain_on_success_only", True) and final_status != "completed":
+                should_chain = False
+            if should_chain:
+                await trigger_chained_task(task["next_task_id"], actor, request)
+                
+    except Exception as e:
+        logging.error(f"Chained task {task_id} failed: {e}")
+
+
 @api_router.post("/devin/tasks", response_model=DevinTask)
 async def create_devin_task(body: DevinTaskCreate, request: Request, session_token: Optional[str] = Cookie(None)):
     actor = await get_actor_context(request, session_token)
@@ -3494,6 +3814,8 @@ async def create_devin_task(body: DevinTaskCreate, request: Request, session_tok
         "run_count": 0,
         "last_run_summary": "",
         "last_error": "",
+        "next_task_id": body.next_task_id,
+        "chain_on_success_only": body.chain_on_success_only,
     }
 
     await db.devin_tasks.insert_one(task_doc)
@@ -3667,6 +3989,20 @@ async def run_devin_task(
                 "$inc": {"run_count": 1},
             },
         )
+
+        # TASK CHAINING: If there's a next task, trigger it
+        if task.get("next_task_id"):
+            should_chain = True
+            if task.get("chain_on_success_only", True) and final_status != "completed":
+                should_chain = False
+            
+            if should_chain:
+                next_task = await db.devin_tasks.find_one({"id": task["next_task_id"]}, {"_id": 0})
+                if next_task and next_task.get("status") == "queued":
+                    # Auto-trigger the next task (non-blocking)
+                    asyncio.create_task(
+                        trigger_chained_task(task["next_task_id"], actor, request)
+                    )
 
         return DevinRunRecord(**run_doc)
         
