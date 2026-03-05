@@ -153,6 +153,22 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - **Critical Hooks Fix** (found by testing agent): Moved helper functions before conditional early returns in `index.tsx` to fix React "Rendered more hooks than during previous render" crash on page refresh
 - **JSX Syntax Fix** (found by testing agent): Fixed extra closing brace `')}}` → `')}'` in `index.tsx`
 
+### Session 8 (2026-03-05) — Devin Focused Upgrade (Cost-Safe)
+- **New Devin Ops backend APIs** in `backend/server.py`:
+  - `POST /api/devin/tasks` (queue task with risk classification)
+  - `GET /api/devin/tasks` (task queue)
+  - `POST /api/devin/tasks/{id}/approve-risk` (high-risk approval gate)
+  - `POST /api/devin/tasks/{id}/run` (supports `dry_run` to avoid model cost)
+  - `GET /api/devin/runs` (run history)
+- **Risk gating policy**: high-risk tasks (delete/production/secrets/security/legal markers) require approval before execution.
+- **Devin Lab UI added**: `frontend/app/devin-lab.tsx`
+  - Create task, risk-aware queue, approve-risk action, Dry Run and Live Run controls, run history.
+  - Added grid menu entry **Devin Lab** and route registration in `_layout.tsx`.
+- **Cost-effective default flow**: Dry Run path executes without external model calls, enabling safe iteration.
+- **Verification completed**:
+  - Frontend testing agent: Devin Lab flow passed (create task, dry run, queue/history updates, menu navigation).
+  - Backend testing agent: all Devin Ops API tests passed including high-risk 403 enforcement and post-approval success.
+
 ---
 
 ## Prioritized Backlog
@@ -161,14 +177,17 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - [x] HD Video Generation (Sora 2) — COMPLETED Session 4
 - [x] Grok video generation regression (`no data returned`) — FIXED Session 6
 - [x] Grid menu visibility/clickability regression check — VERIFIED Session 6
+- [x] Devin core visibility and core-agent guarantee (Aurora + Devin) — VERIFIED Session 7
 - [ ] Verify production deployment shows app correctly after `output:single` change
 
 ### P1 — High Priority
+- [x] Devin task queue + dry-run autonomy scaffold + high-risk approval gate — COMPLETED Session 8
 - [ ] Keyboard overlap audit for remaining screens beyond main chat + agent chat (if user reports specific screen)
 - [ ] Voice-to-text on main chat screen (user request, deferred for cost assessment)
 - [ ] Integrate Claude API (placeholder exists)
 - [ ] Integrate Kimi LLM API (placeholder exists)
 - [ ] Agents should be user-scoped (currently global — all users share same agents)
+- [ ] Devin multi-step retry heuristics + execution quality scoring dashboard
 
 ### P2 — Medium Priority
 - [ ] Further enhance 3D/high-tech UI (user request)
@@ -184,7 +203,7 @@ Build a visually appealing, functional mobile/web AI app called "Agent Forge" (r
 - [ ] Export conversations feature
 
 ## Known Limitations
-- Admin password is hardcoded in `AuthContext.tsx` (security risk — move to env var)
+- Admin secret is env-backed (`EXPO_PUBLIC_ADMIN_SECRET`) but still client-visible by design on web; keep admin-only actions server-validated.
 - Agents are global (not user-scoped) — all users share the same agents list
 - Voice recording on web is limited by browser permissions/APIs
 - Google OAuth only implemented for web, not native
