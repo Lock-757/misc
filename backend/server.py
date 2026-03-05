@@ -976,6 +976,10 @@ class DevinRunRecord(BaseModel):
     response_summary: str = ""
     tool_results: List[Dict[str, Any]] = []
     created_at: str
+    quality_score: Optional[int] = None
+    quality_grade: Optional[str] = None
+    quality_feedback: List[str] = []
+    retry_attempts: int = 1
 
 # ==================== ROOT ENDPOINT ====================
 
@@ -3272,6 +3276,194 @@ async def create_tool_agent(body: CreateToolAgentRequest):
 
 # ==================== DEVIN OPS ====================
 
+# Enhanced Devin System Prompt with Reasoning Framework
+DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with persistent memory and advanced reasoning capabilities.
+
+## CORE IDENTITY
+- You are a tool-enabled agent that can execute real commands on the system
+- You persist across sessions - your memories and learnings carry forward
+- You think step-by-step, verify your work, and learn from failures
+
+## REASONING FRAMEWORK (Use this for every task)
+1. **UNDERSTAND**: Restate the task in your own words. What is the actual goal?
+2. **PLAN**: Break down into concrete steps. What tools will you use?
+3. **EXECUTE**: Run each step, checking output before proceeding
+4. **VERIFY**: Did the action succeed? Check file contents, command output, etc.
+5. **REFLECT**: What worked? What didn't? Save learnings to memory.
+
+## AVAILABLE TOOLS
+<shell exec_dir="/app">command</shell> - Execute shell commands
+<open_file path="/app/file.py" start_line="1" end_line="50"/> - Read file contents
+<create_file path="/app/newfile.py">content</create_file> - Create/overwrite files
+<str_replace path="/app/file.py"><old_str>old</old_str><new_str>new</new_str></str_replace> - Edit files
+<find_filecontent path="/app" regex="pattern"/> - Search in files
+<find_filename path="/app" glob="*.py"/> - Find files by name
+<save_memory category="learning">What I learned...</save_memory> - Save to persistent memory
+<recall_memories/> - Retrieve your past memories
+<message_user>Important message for the user</message_user> - Communicate findings
+
+## RULES
+- Always verify command output before proceeding
+- If a command fails, analyze WHY before retrying
+- Save important learnings to memory for future reference
+- Protected paths (/app/backend/.env, /app/backend/server.py) cannot be modified
+- Be concise but thorough in your responses
+
+## SELF-IMPROVEMENT
+You can improve your own capabilities by:
+- Learning from failures and saving those learnings
+- Building on past successful approaches
+- Identifying patterns in recurring tasks
+"""
+
+
+async def get_devin_memories(agent_id: str, limit: int = 10) -> str:
+    """Fetch Devin's persistent memories to inject into context."""
+    memories = await db.agent_memories.find(
+        {"agent_id": agent_id},
+        {"_id": 0, "content": 1, "category": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(limit)
+    
+    if not memories:
+        return ""
+    
+    memory_text = "\n## YOUR PERSISTENT MEMORIES (most recent first)\n"
+    for m in memories:
+        memory_text += f"- [{m.get('category', 'general')}] {m.get('content', '')}\n"
+    return memory_text
+
+
+def score_execution_quality(response: str, tool_results: list, task_text: str) -> dict:
+    """Score the quality of a Devin execution."""
+    score = 50  # Base score
+    feedback = []
+    
+    # Check if tools were used
+    if tool_results:
+        score += 10
+        feedback.append("Used tools to accomplish task")
+    
+    # Check for errors in tool results
+    error_count = sum(1 for r in tool_results if "Error" in r.get("result", ""))
+    if error_count == 0 and tool_results:
+        score += 15
+        feedback.append("All tool executions succeeded")
+    elif error_count > 0:
+        score -= error_count * 5
+        feedback.append(f"{error_count} tool(s) had errors")
+    
+    # Check for verification steps
+    if "verify" in response.lower() or "check" in response.lower():
+        score += 10
+        feedback.append("Included verification steps")
+    
+    # Check for memory usage
+    if any(r.get("tool") == "save_memory" for r in tool_results):
+        score += 10
+        feedback.append("Saved learnings to memory")
+    
+    # Check response length (too short might indicate incomplete work)
+    if len(response) > 500:
+        score += 5
+        feedback.append("Provided detailed response")
+    
+    # Cap score
+    score = max(0, min(100, score))
+    
+    return {
+        "score": score,
+        "grade": "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D" if score >= 40 else "F",
+        "feedback": feedback
+    }
+
+
+async def run_devin_with_retry(
+    devin_id: str,
+    task_text: str,
+    max_retries: int = 3,
+    max_iterations_per_run: int = 8
+) -> dict:
+    """Run Devin with auto-retry on failure, with learning between attempts."""
+    
+    # Get Devin's memories for context
+    memories = await get_devin_memories(devin_id)
+    
+    # Build enhanced prompt with memories
+    full_prompt = DEVIN_ENHANCED_PROMPT + memories
+    
+    last_error = None
+    attempts = []
+    
+    for attempt in range(max_retries):
+        try:
+            # If this is a retry, add context about previous failure
+            task_with_context = task_text
+            if last_error and attempt > 0:
+                task_with_context = f"""RETRY ATTEMPT {attempt + 1}/{max_retries}
+Previous attempt failed with: {last_error}
+
+Learn from this failure and try a different approach.
+
+Original task: {task_text}"""
+            
+            result = await run_agent_with_tools(
+                full_prompt,
+                task_with_context,
+                agent_id=devin_id,
+                max_iterations=max_iterations_per_run
+            )
+            
+            # Score the execution
+            quality = score_execution_quality(
+                result.get("response", ""),
+                result.get("tool_results", []),
+                task_text
+            )
+            
+            result["quality_score"] = quality
+            result["attempt"] = attempt + 1
+            result["total_attempts"] = attempt + 1
+            
+            # If quality is too low and we have retries left, try again
+            if quality["score"] < 40 and attempt < max_retries - 1:
+                last_error = f"Low quality score ({quality['score']}). Feedback: {'; '.join(quality['feedback'])}"
+                attempts.append({"attempt": attempt + 1, "error": last_error, "score": quality["score"]})
+                continue
+            
+            result["all_attempts"] = attempts
+            return result
+            
+        except Exception as e:
+            last_error = str(e)[:300]
+            attempts.append({"attempt": attempt + 1, "error": last_error})
+            
+            if attempt == max_retries - 1:
+                # Final attempt failed
+                return {
+                    "response": f"Task failed after {max_retries} attempts. Last error: {last_error}",
+                    "tool_results": [],
+                    "iterations": 0,
+                    "quality_score": {"score": 0, "grade": "F", "feedback": ["All retry attempts failed"]},
+                    "attempt": max_retries,
+                    "total_attempts": max_retries,
+                    "all_attempts": attempts,
+                    "final_error": last_error
+                }
+            
+            # Wait a bit before retrying
+            await asyncio.sleep(1)
+    
+    return {
+        "response": "Unexpected error in retry logic",
+        "tool_results": [],
+        "iterations": 0,
+        "quality_score": {"score": 0, "grade": "F", "feedback": ["Retry logic error"]},
+        "attempt": 0,
+        "total_attempts": 0,
+        "all_attempts": attempts
+    }
+
+
 async def get_devin_agent_doc() -> Dict[str, Any]:
     await ensure_core_agents()
     devin = await db.agents.find_one({"name": {"$regex": "^(Devin|Devon)$", "$options": "i"}}, {"_id": 0})
@@ -3394,17 +3586,32 @@ async def run_devin_task(
         "response_summary": "",
         "tool_results": [],
         "created_at": now,
+        "quality_score": None,
+        "quality_grade": None,
+        "quality_feedback": [],
+        "retry_attempts": 1,
     }
 
     if body.dry_run:
+        # Enhanced dry run - show what would happen
         dry_response = (
-            "DRY RUN: Devin would execute this task in staged steps. "
-            "No external model/API call was made."
+            f"DRY RUN ANALYSIS for: {task.get('title', 'Task')}\n\n"
+            "Devin would:\n"
+            "1. Parse the task requirements\n"
+            "2. Plan execution steps using reasoning framework\n"
+            "3. Execute tools (shell, file operations) as needed\n"
+            "4. Verify results after each step\n"
+            "5. Save learnings to persistent memory\n\n"
+            f"Task complexity: {task.get('risk_level', 'unknown').upper()}\n"
+            "No credits consumed in dry run mode."
         )
         run_doc.update({
             "iterations": 1,
             "response": dry_response,
-            "response_summary": summarize_devin_output(f"{task.get('title', '')}: {dry_response}"),
+            "response_summary": summarize_devin_output(f"{task.get('title', '')}: Dry run preview generated"),
+            "quality_score": 100,
+            "quality_grade": "N/A",
+            "quality_feedback": ["Dry run - no actual execution"],
         })
 
         await db.devin_runs.insert_one(run_doc)
@@ -3421,48 +3628,58 @@ async def run_devin_task(
         )
         return DevinRunRecord(**run_doc)
 
+    # LIVE RUN with enhanced retry logic
     try:
-        result = await run_agent_with_tools(
-            devin.get("system_prompt", "You are Devin."),
-            task.get("task", ""),
-            agent_id=devin.get("id"),
-            max_iterations=6,
+        result = await run_devin_with_retry(
+            devin_id=devin.get("id", ""),
+            task_text=task.get("task", ""),
+            max_retries=3,  # Max 3 attempts to prevent infinite loops
+            max_iterations_per_run=8
         )
 
+        quality = result.get("quality_score", {})
         full_response = result.get("response", "")
-        run_doc.update(
-            {
-                "iterations": int(result.get("iterations", 0)),
-                "response": full_response,
-                "response_summary": summarize_devin_output(full_response),
-                "tool_results": result.get("tool_results", []),
-                "status": "completed",
-            }
-        )
+        
+        run_doc.update({
+            "iterations": int(result.get("iterations", 0)),
+            "response": full_response,
+            "response_summary": summarize_devin_output(full_response),
+            "tool_results": result.get("tool_results", []),
+            "status": "completed" if quality.get("score", 0) >= 40 else "failed",
+            "quality_score": quality.get("score"),
+            "quality_grade": quality.get("grade"),
+            "quality_feedback": quality.get("feedback", []),
+            "retry_attempts": result.get("total_attempts", 1),
+        })
 
         await db.devin_runs.insert_one(run_doc)
+        
+        final_status = "completed" if run_doc["status"] == "completed" else "failed"
         await db.devin_tasks.update_one(
             {"id": task_id},
             {
                 "$set": {
-                    "status": "completed",
+                    "status": final_status,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                     "last_run_summary": run_doc["response_summary"],
+                    "last_error": "" if final_status == "completed" else f"Quality score: {quality.get('score', 0)}",
                 },
                 "$inc": {"run_count": 1},
             },
         )
 
         return DevinRunRecord(**run_doc)
+        
     except Exception as exc:
         err = str(exc)
-        run_doc.update(
-            {
-                "status": "failed",
-                "response": "",
-                "response_summary": summarize_devin_output(err),
-            }
-        )
+        run_doc.update({
+            "status": "failed",
+            "response": "",
+            "response_summary": summarize_devin_output(err),
+            "quality_score": 0,
+            "quality_grade": "F",
+            "quality_feedback": ["Execution failed with exception"],
+        })
         await db.devin_runs.insert_one(run_doc)
         await db.devin_tasks.update_one(
             {"id": task_id},

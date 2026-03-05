@@ -57,6 +57,10 @@ interface DevinRun {
   iterations: number;
   response_summary: string;
   created_at: string;
+  quality_score?: number;
+  quality_grade?: string;
+  quality_feedback?: string[];
+  retry_attempts?: number;
 }
 
 export default function DevinLabScreen() {
@@ -223,6 +227,17 @@ export default function DevinLabScreen() {
     if (risk === 'high') return C.danger;
     if (risk === 'medium') return '#F59E0B';
     return C.success;
+  };
+
+  const getGradeColor = (grade: string) => {
+    switch (grade) {
+      case 'A': return '#22C55E';
+      case 'B': return '#84CC16';
+      case 'C': return '#F59E0B';
+      case 'D': return '#F97316';
+      case 'F': return '#EF4444';
+      default: return C.muted;
+    }
   };
 
   // ============ AUTH SCREEN ============
@@ -490,9 +505,37 @@ export default function DevinLabScreen() {
                       <View style={run.dry_run ? styles.dryBadge : styles.liveBadge}>
                         <Text style={styles.badgeText}>{run.dry_run ? 'DRY' : 'LIVE'}</Text>
                       </View>
-                      <Text style={styles.runIterations}>{run.iterations} iterations</Text>
+                      {run.quality_grade && run.quality_grade !== 'N/A' && (
+                        <View style={[styles.gradeBadge, { backgroundColor: getGradeColor(run.quality_grade) }]}>
+                          <Text style={styles.gradeText}>{run.quality_grade}</Text>
+                        </View>
+                      )}
+                      {run.retry_attempts && run.retry_attempts > 1 && (
+                        <View style={styles.retryBadge}>
+                          <Ionicons name="refresh" size={10} color={C.muted} />
+                          <Text style={styles.retryText}>{run.retry_attempts} tries</Text>
+                        </View>
+                      )}
+                      <Text style={styles.runIterations}>{run.iterations} iter</Text>
                     </View>
+                    
+                    {run.quality_score !== null && run.quality_score !== undefined && !run.dry_run && (
+                      <View style={styles.qualityBar}>
+                        <View style={[styles.qualityFill, { width: `${run.quality_score}%`, backgroundColor: getGradeColor(run.quality_grade || 'C') }]} />
+                        <Text style={styles.qualityLabel}>Quality: {run.quality_score}%</Text>
+                      </View>
+                    )}
+                    
                     <Text style={styles.runSummary}>{run.response_summary || 'No summary'}</Text>
+                    
+                    {run.quality_feedback && run.quality_feedback.length > 0 && !run.dry_run && (
+                      <View style={styles.feedbackContainer}>
+                        {run.quality_feedback.map((fb, idx) => (
+                          <Text key={idx} style={styles.feedbackItem}>• {fb}</Text>
+                        ))}
+                      </View>
+                    )}
+                    
                     <Text style={styles.runDate}>
                       {new Date(run.created_at).toLocaleString()}
                     </Text>
@@ -728,7 +771,7 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     marginBottom: 10,
   },
-  runHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  runHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   runStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusSuccess: { backgroundColor: 'rgba(16,185,129,0.2)' },
   statusFailed: { backgroundColor: 'rgba(239,68,68,0.2)' },
@@ -739,4 +782,52 @@ const styles = StyleSheet.create({
   runIterations: { fontSize: 11, color: C.muted },
   runSummary: { fontSize: 13, color: C.text, lineHeight: 18, marginBottom: 6 },
   runDate: { fontSize: 11, color: C.muted },
+  
+  // Quality & Retry badges
+  gradeBadge: { 
+    paddingHorizontal: 8, 
+    paddingVertical: 3, 
+    borderRadius: 4,
+  },
+  gradeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  retryBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 3,
+    backgroundColor: 'rgba(255,255,255,0.1)', 
+    paddingHorizontal: 6, 
+    paddingVertical: 3, 
+    borderRadius: 4 
+  },
+  retryText: { fontSize: 9, color: C.muted },
+  qualityBar: {
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    marginBottom: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  qualityFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 10,
+  },
+  qualityLabel: {
+    position: 'absolute',
+    right: 8,
+    top: 3,
+    fontSize: 10,
+    fontWeight: '700',
+    color: C.text,
+  },
+  feedbackContainer: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+  },
+  feedbackItem: { fontSize: 11, color: C.muted, lineHeight: 16 },
 });
