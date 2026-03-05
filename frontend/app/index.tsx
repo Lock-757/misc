@@ -22,6 +22,7 @@ import axios from 'axios';
 const { width } = Dimensions.get('window');
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const ADMIN_SECRET = process.env.EXPO_PUBLIC_ADMIN_SECRET || 'forge_master_2025';
+const createChatSessionId = () => `devin-chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const C = {
   bg: '#0A0A0F',
@@ -127,6 +128,7 @@ export default function DevinLabScreen() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState('');
   
   // Task creation
   const [title, setTitle] = useState('');
@@ -151,6 +153,13 @@ export default function DevinLabScreen() {
       
       const savedChat = localStorage.getItem('devin_chat');
       if (savedChat) setChatMessages(JSON.parse(savedChat));
+
+      const savedChatSessionId = localStorage.getItem('devin_chat_session_id');
+      const nextChatSessionId = savedChatSessionId || createChatSessionId();
+      setChatSessionId(nextChatSessionId);
+      if (!savedChatSessionId) localStorage.setItem('devin_chat_session_id', nextChatSessionId);
+    } else {
+      setChatSessionId(createChatSessionId());
     }
   }, []);
 
@@ -183,6 +192,11 @@ export default function DevinLabScreen() {
 
   const getHeaders = () => ({ 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_SECRET });
 
+  const persistChatSessionId = (nextSessionId: string) => {
+    setChatSessionId(nextSessionId);
+    if (Platform.OS === 'web') localStorage.setItem('devin_chat_session_id', nextSessionId);
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -211,6 +225,9 @@ export default function DevinLabScreen() {
   // CHAT FUNCTIONS
   const sendChatMessage = async () => {
     if (!chatInput.trim() || chatSending || !devinId) return;
+
+    const activeSessionId = chatSessionId || createChatSessionId();
+    if (!chatSessionId) persistChatSessionId(activeSessionId);
     
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -231,7 +248,12 @@ export default function DevinLabScreen() {
         agent_id: devinId,
         message: userMessage.content,
         user_id: 'admin',
+        session_id: activeSessionId,
       }, { headers: getHeaders() });
+
+      if (res.data.session_id && res.data.session_id !== activeSessionId) {
+        persistChatSessionId(res.data.session_id);
+      }
       
       const assistantMessage: ChatMessage = {
         id: res.data.message?.id || Date.now().toString(),
@@ -264,6 +286,8 @@ export default function DevinLabScreen() {
     const confirm = Platform.OS === 'web' ? window.confirm('Clear chat history?') : true;
     if (confirm) {
       setChatMessages([]);
+      const nextChatSessionId = createChatSessionId();
+      persistChatSessionId(nextChatSessionId);
       if (Platform.OS === 'web') localStorage.removeItem('devin_chat');
     }
   };
@@ -389,6 +413,7 @@ export default function DevinLabScreen() {
             <Text style={styles.authTitle}>Devin Lab</Text>
             <Text style={styles.authSubtitle}>Admin Access Required</Text>
             <TextInput
+              testID="admin-password-input"
               style={styles.authInput}
               placeholder="Enter admin password"
               placeholderTextColor={C.muted}
@@ -397,8 +422,8 @@ export default function DevinLabScreen() {
               secureTextEntry
               onSubmitEditing={handleAuth}
             />
-            {authError ? <Text style={styles.authError}>{authError}</Text> : null}
-            <TouchableOpacity style={styles.authButton} onPress={handleAuth}>
+            {authError ? <Text testID="auth-error-message" style={styles.authError}>{authError}</Text> : null}
+            <TouchableOpacity testID="admin-login-button" style={styles.authButton} onPress={handleAuth}>
               <Text style={styles.authButtonText}>Enter Lab</Text>
             </TouchableOpacity>
           </View>
@@ -412,7 +437,7 @@ export default function DevinLabScreen() {
     <LinearGradient colors={[C.bg, '#12121A', C.bg]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
-        <View style={styles.header}>
+        <View testID="devin-app-header" style={styles.header}>
           <View style={styles.headerLeft}>
             <LinearGradient colors={[C.accent, '#16A34A']} style={styles.headerLogo}>
               <Ionicons name="flash" size={20} color="#fff" />
@@ -420,10 +445,10 @@ export default function DevinLabScreen() {
             <Text style={styles.headerTitle}>Devin</Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => void loadData()} style={styles.headerBtn}>
+            <TouchableOpacity testID="refresh-data-button" onPress={() => void loadData()} style={styles.headerBtn}>
               <Ionicons name="refresh" size={20} color={C.accent} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+            <TouchableOpacity testID="logout-button" onPress={handleLogout} style={styles.logoutBtn}>
               <Ionicons name="log-out-outline" size={18} color={C.danger} />
             </TouchableOpacity>
           </View>
@@ -437,11 +462,12 @@ export default function DevinLabScreen() {
               { key: 'create', icon: 'add-circle', label: 'Task' },
               { key: 'queue', icon: 'list', label: `Queue (${tasks.length})` },
               { key: 'history', icon: 'time', label: 'History' },
-              { key: 'memory', icon: 'brain', label: `Memory` },
+              { key: 'memory', icon: 'albums', label: `Memory` },
               { key: 'permissions', icon: 'shield-checkmark', label: 'Perms' },
             ].map((tab) => (
               <TouchableOpacity
                 key={tab.key}
+                testID={`tab-button-${tab.key}`}
                 style={[styles.tab, activeTab === tab.key && styles.tabActive]}
                 onPress={() => setActiveTab(tab.key as any)}
               >
@@ -458,16 +484,18 @@ export default function DevinLabScreen() {
             <View style={styles.centered}><ActivityIndicator size="large" color={C.accent} /></View>
           ) : activeTab === 'chat' ? (
             // ============ CHAT TAB ============
-            <View style={styles.chatContainer}>
+            <View testID="chat-tab-panel" style={styles.chatContainer}>
               {/* Chat Messages */}
               <ScrollView 
                 ref={chatScrollRef}
+                testID="chat-messages-scroll"
                 style={styles.chatMessages}
                 contentContainerStyle={styles.chatMessagesContent}
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
               >
                 {chatMessages.length === 0 ? (
-                  <View style={styles.chatEmpty}>
+                  <View testID="chat-empty-state" style={styles.chatEmpty}>
                     <LinearGradient colors={[C.accent, '#16A34A']} style={styles.chatEmptyIcon}>
                       <Ionicons name="chatbubbles" size={32} color="#fff" />
                     </LinearGradient>
@@ -477,7 +505,7 @@ export default function DevinLabScreen() {
                     </Text>
                     <View style={styles.chatSuggestions}>
                       {['What can you do?', 'Check disk space', 'Screenshot google.com'].map((s, i) => (
-                        <TouchableOpacity key={i} style={styles.chatSuggestion} onPress={() => setChatInput(s)}>
+                        <TouchableOpacity key={i} testID={`chat-suggestion-${i}`} style={styles.chatSuggestion} onPress={() => setChatInput(s)}>
                           <Text style={styles.chatSuggestionText}>{s}</Text>
                         </TouchableOpacity>
                       ))}
@@ -485,7 +513,7 @@ export default function DevinLabScreen() {
                   </View>
                 ) : (
                   chatMessages.map((msg) => (
-                    <View key={msg.id} style={[styles.chatBubble, msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant]}>
+                    <View testID={`chat-message-${msg.role}-${msg.id}`} key={msg.id} style={[styles.chatBubble, msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant]}>
                       {msg.role === 'assistant' && (
                         <View style={styles.chatBubbleHeader}>
                           <LinearGradient colors={[C.accent, '#16A34A']} style={styles.chatAvatar}>
@@ -494,6 +522,7 @@ export default function DevinLabScreen() {
                           <Text style={styles.chatBubbleName}>Devin</Text>
                           {msg.toolResults && msg.toolResults.length > 0 && (
                             <TouchableOpacity 
+                              testID={`chat-tool-results-button-${msg.id}`}
                               style={styles.toolBadge} 
                               onPress={() => setShowToolResults(msg.toolResults || null)}
                             >
@@ -530,13 +559,14 @@ export default function DevinLabScreen() {
               </ScrollView>
 
               {/* Chat Input */}
-              <View style={styles.chatInputContainer}>
+              <View testID="chat-input-container" style={styles.chatInputContainer}>
                 {chatMessages.length > 0 && (
-                  <TouchableOpacity onPress={clearChat} style={styles.clearChatBtn}>
+                  <TouchableOpacity testID="clear-chat-button" onPress={clearChat} style={styles.clearChatBtn}>
                     <Ionicons name="trash-outline" size={18} color={C.muted} />
                   </TouchableOpacity>
                 )}
                 <TextInput
+                  testID="chat-message-input"
                   style={styles.chatInput}
                   placeholder="Message Devin..."
                   placeholderTextColor={C.muted}
@@ -547,6 +577,7 @@ export default function DevinLabScreen() {
                   maxLength={2000}
                 />
                 <TouchableOpacity 
+                  testID="chat-send-button"
                   style={[styles.chatSendBtn, (!chatInput.trim() || chatSending) && styles.chatSendBtnDisabled]} 
                   onPress={sendChatMessage}
                   disabled={!chatInput.trim() || chatSending}
@@ -672,7 +703,7 @@ export default function DevinLabScreen() {
               <Text style={styles.sectionTitle}>Devin's Memory ({memories.length})</Text>
               {memories.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="brain-outline" size={48} color={C.muted} />
+                  <Ionicons name="albums-outline" size={48} color={C.muted} />
                   <Text style={styles.emptyText}>No memories yet</Text>
                 </View>
               ) : (

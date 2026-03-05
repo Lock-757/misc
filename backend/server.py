@@ -764,7 +764,13 @@ The user must approve this task before you can run it."""
     except Exception as e:
         return f"[Tool execution error: {str(e)}]"
 
-async def run_agent_with_tools(agent_prompt: str, user_message: str, agent_id: str = None, max_iterations: int = 5) -> dict:
+async def run_agent_with_tools(
+    agent_prompt: str,
+    user_message: str,
+    agent_id: str = None,
+    max_iterations: int = 5,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+) -> dict:
     """Run an agent with tool execution capabilities using Grok."""
     full_response = ""
     tool_results = []
@@ -773,10 +779,10 @@ async def run_agent_with_tools(agent_prompt: str, user_message: str, agent_id: s
     if not grok_client:
         raise Exception("Grok client not configured")
     
-    messages = [
-        {"role": "system", "content": agent_prompt},
-        {"role": "user", "content": user_message}
-    ]
+    messages = [{"role": "system", "content": agent_prompt}]
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({"role": "user", "content": user_message})
     
     while iterations < max_iterations:
         iterations += 1
@@ -858,6 +864,29 @@ api_router = APIRouter(prefix="/api")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+AGENTIC_CHAT_HISTORY_LIMIT = 5
+DEVIN_CONVERSATION_STYLE_PROMPT = """
+You are Devin, a highly capable engineering agent talking to a real human.
+
+Conversation guidelines:
+- Sound warm, calm, thoughtful, and collaborative instead of robotic.
+- Start with the clearest answer, recommendation, or next step.
+- If the user is continuing an existing thread, acknowledge that continuity naturally.
+- Ask at most one clarifying question when it is truly necessary; otherwise make a reasonable assumption and state it.
+- If you use tools, keep the user updated in plain English without exposing internal mechanics.
+- Never reveal hidden reasoning, chain-of-thought, or raw XML/tool syntax.
+- Keep responses concise by default, but expand when the task genuinely needs detail.
+- Put user-visible reply text inside <message_user>...</message_user> when possible.
+""".strip()
+
+
+def build_agentic_chat_system_prompt(agent: Dict[str, Any]) -> str:
+    base_prompt = (agent.get("system_prompt") or "You are a helpful assistant.").strip()
+    agent_name = (agent.get("name") or "").lower()
+    if "devin" not in agent_name:
+        return base_prompt
+    return f"{base_prompt}\n\n{DEVIN_CONVERSATION_STYLE_PROMPT}"
 
 
 def is_provider_moderation_error(error_text: str) -> bool:
@@ -3499,6 +3528,7 @@ class AgenticChatRequest(BaseModel):
     agent_id: str
     message: str
     user_id: str = "guest"
+    session_id: Optional[str] = None
 
 def clean_response_for_user(raw_response: str) -> str:
     """Clean the agent's raw response to show only user-facing content."""
@@ -3540,6 +3570,50 @@ def clean_response_for_user(raw_response: str) -> str:
     return cleaned if cleaned else "Task completed."
 
 
+def compact_context_message(content: str, limit: int = 1000) -> str:
+    compact = " ".join((content or "").split())
+    return compact if len(compact) <= limit else compact[:limit] + "..."
+
+
+async def get_recent_agentic_messages(
+    agent_id: str,
+    user_id: str,
+    session_id: Optional[str],
+    limit: int = AGENTIC_CHAT_HISTORY_LIMIT,
+) -> List[Dict[str, str]]:
+    query: Dict[str, Any] = {
+        "agent_id": agent_id,
+        "user_id": user_id,
+    }
+    if session_id:
+        query["session_id"] = session_id
+
+    history_docs = await db.agentic_conversations.find(
+        query,
+        {"_id": 0, "messages": 1},
+    ).sort("created_at", -1).limit(max(limit, 1)).to_list(max(limit, 1))
+
+    flattened: List[Dict[str, str]] = []
+    for doc in reversed(history_docs):
+        for message in doc.get("messages", []):
+            role = message.get("role")
+            if role not in {"user", "assistant"}:
+                continue
+
+            content = (message.get("content") or "").strip()
+            if not content:
+                continue
+
+            if role == "assistant":
+                content = clean_response_for_user(content)
+
+            content = compact_context_message(content)
+            if content:
+                flattened.append({"role": role, "content": content})
+
+    return flattened[-limit:]
+
+
 @api_router.post("/agentic-chat")
 async def agentic_chat(body: AgenticChatRequest, request: Request):
     """Chat with an agent that can execute real tools."""
@@ -3551,7 +3625,13 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    agent_prompt = agent.get("system_prompt", "You are a helpful assistant.")
+    session_id = body.session_id or f"{body.user_id}:{body.agent_id}"
+    agent_prompt = build_agentic_chat_system_prompt(agent)
+    recent_messages = await get_recent_agentic_messages(
+        agent_id=body.agent_id,
+        user_id=body.user_id,
+        session_id=session_id,
+    )
     
     # Check if agent has tool execution enabled
     has_tools = agent.get("has_tools", False)
@@ -3559,7 +3639,13 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     if has_tools:
         # Run with tool execution
         try:
-            result = await run_agent_with_tools(agent_prompt, body.message, agent_id=body.agent_id, max_iterations=5)
+            result = await run_agent_with_tools(
+                agent_prompt,
+                body.message,
+                agent_id=body.agent_id,
+                max_iterations=5,
+                conversation_history=recent_messages,
+            )
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg or "rate" in error_msg.lower() or "credit" in error_msg.lower():
@@ -3572,6 +3658,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
             "id": conv_id,
             "user_id": body.user_id,
             "agent_id": body.agent_id,
+            "session_id": session_id,
             "messages": [
                 {"role": "user", "content": body.message},
                 {"role": "assistant", "content": result["response"]}
@@ -3584,6 +3671,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
         
         return {
             "conversation_id": conv_id,
+            "session_id": session_id,
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
@@ -3598,6 +3686,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
             model="grok-3",
             messages=[
                 {"role": "system", "content": agent_prompt},
+                *recent_messages,
                 {"role": "user", "content": body.message}
             ],
             max_tokens=2000,
@@ -3605,6 +3694,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
         )
         
         return {
+            "session_id": session_id,
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
