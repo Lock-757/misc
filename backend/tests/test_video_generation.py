@@ -7,7 +7,7 @@ import requests
 import os
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://aurora-devin-lab.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://devin-interface.preview.emergentagent.com')
 ADMIN_PASSWORD = 'forge_master_2025'
 
 

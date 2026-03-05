@@ -8,7 +8,7 @@ import requests
 import json
 
 # Configuration
-BASE_URL = "https://aurora-devin-lab.preview.emergentagent.com"
+BASE_URL = "https://devin-interface.preview.emergentagent.com"
 ADMIN_KEY = "forge_master_2025"
 
 def test_agents_endpoint():
