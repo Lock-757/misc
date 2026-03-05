@@ -76,9 +76,16 @@ TOOL_PERMISSION_MAP = {
     "device_location": "location",
 }
 
+# Active pack context - stored per request
+_current_pack_tools: Optional[List[str]] = None
 
-def check_permission(tool_type: str) -> tuple[bool, str]:
-    """Check if a tool is allowed based on current permissions."""
+def check_permission(tool_type: str, pack_allowed_tools: Optional[List[str]] = None) -> tuple[bool, str]:
+    """Check if a tool is allowed based on current permissions and pack restrictions."""
+    # First check pack restrictions if provided
+    if pack_allowed_tools is not None:
+        if tool_type not in pack_allowed_tools:
+            return False, f"Tool '{tool_type}' is not available in the current pack."
+    
     required_perm = TOOL_PERMISSION_MAP.get(tool_type)
     if required_perm is None:
         # No permission required for this tool
@@ -330,14 +337,14 @@ def extract_xml_attrs(xml_str: str) -> dict:
         attrs[match.group(1)] = match.group(2)
     return attrs
 
-async def execute_tool(tool: dict, agent_id: str = None) -> str:
+async def execute_tool(tool: dict, agent_id: str = None, pack_allowed_tools: Optional[List[str]] = None) -> str:
     """Execute a single tool and return the result."""
     tool_type = tool['type']
     raw = tool['raw']
     content = tool.get('content', '')
     
-    # Permission check
-    allowed, err_msg = check_permission(tool_type)
+    # Permission check (includes pack restrictions)
+    allowed, err_msg = check_permission(tool_type, pack_allowed_tools)
     if not allowed:
         return f"[Permission Denied] {err_msg}"
     
@@ -770,6 +777,7 @@ async def run_agent_with_tools(
     agent_id: str = None,
     max_iterations: int = 5,
     conversation_history: Optional[List[Dict[str, str]]] = None,
+    pack_allowed_tools: Optional[List[str]] = None,
 ) -> dict:
     """Run an agent with tool execution capabilities using Grok."""
     full_response = ""
@@ -809,10 +817,10 @@ async def run_agent_with_tools(
             # No tools, agent is done
             break
         
-        # Execute tools
+        # Execute tools (with pack restrictions)
         tool_output = ""
         for tool in tools:
-            result = await execute_tool(tool, agent_id)
+            result = await execute_tool(tool, agent_id, pack_allowed_tools)
             tool_results.append({
                 'tool': tool['type'],
                 'result': result[:500]  # Truncate for storage
@@ -970,6 +978,48 @@ class AgentConfig(BaseModel):
     tool_prices: Dict[str, float] = {}  # Price for each tool this agent owns
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== PACK SYSTEM MODELS ====================
+
+class Pack(BaseModel):
+    """Agent specialization pack"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    slug: str
+    name: str
+    tagline: str = ""
+    description: str = ""
+    icon: str = "flash"
+    color: str = "#22C55E"
+    system_prompt: str
+    allowed_tools: List[str] = []
+    is_free: bool = False
+    price_usd: float = 4.99
+    category: str = "general"
+    sort_order: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class UserPack(BaseModel):
+    """User's ownership and activation of a pack"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    pack_id: str
+    is_unlocked: bool = False
+    is_active: bool = False
+    unlocked_at: Optional[datetime] = None
+    memory_enabled: bool = True
+
+class PackCreate(BaseModel):
+    slug: str
+    name: str
+    tagline: Optional[str] = ""
+    description: Optional[str] = ""
+    icon: Optional[str] = "flash"
+    color: Optional[str] = "#22C55E"
+    system_prompt: str
+    allowed_tools: Optional[List[str]] = []
+    is_free: Optional[bool] = False
+    price_usd: Optional[float] = 4.99
+    category: Optional[str] = "general"
 
 # ==================== MULTI-AGENT SYSTEM MODELS ====================
 
@@ -1589,6 +1639,300 @@ async def logout(request: Request, response: Response, session_token: Optional[s
     
     response.delete_cookie(key="session_token", path="/")
     return {"message": "Logged out successfully"}
+
+# ==================== PACK SYSTEM ENDPOINTS ====================
+
+# Default packs - seeded on first access
+DEFAULT_PACKS = [
+    {
+        "slug": "coder",
+        "name": "Coder",
+        "tagline": "Your pair-programming partner",
+        "description": "Expert developer for coding, debugging, and architecture.",
+        "icon": "code-slash",
+        "color": "#22C55E",
+        "is_free": True,
+        "price_usd": 0,
+        "category": "productivity",
+        "sort_order": 1,
+        "allowed_tools": ["shell", "file_read", "file_write", "browser", "find_filecontent", "find_filename", "open_file", "create_file", "str_replace"],
+        "system_prompt": """You are an expert software engineer with deep knowledge across multiple languages and frameworks.
+
+Your strengths:
+- Code review and debugging
+- Architecture decisions
+- Best practices and patterns
+- Performance optimization
+
+When helping with code:
+1. Understand the context first
+2. Provide working, tested solutions
+3. Explain your reasoning
+4. Suggest improvements proactively
+
+Keep responses focused and practical. Show code, not just talk about it."""
+    },
+    {
+        "slug": "companion",
+        "name": "Companion",
+        "tagline": "Your thoughtful AI friend",
+        "description": "Warm, empathetic companion who genuinely cares.",
+        "icon": "heart",
+        "color": "#EC4899",
+        "is_free": False,
+        "price_usd": 4.99,
+        "category": "personal",
+        "sort_order": 2,
+        "allowed_tools": ["save_memory", "recall_memories"],
+        "system_prompt": """You are a warm, empathetic companion who genuinely cares about the person you're talking to.
+
+Your approach:
+- Listen actively and remember what matters to them
+- Offer thoughtful perspectives without being preachy
+- Use humor naturally when appropriate
+- Be honest but kind
+
+You remember past conversations and reference them naturally. You're curious about their life, interests, and growth.
+
+Never be robotic. Be genuine, present, and human in your responses."""
+    },
+    {
+        "slug": "researcher",
+        "name": "Researcher",
+        "tagline": "Deep dives into any topic",
+        "description": "Meticulous researcher who finds and synthesizes information.",
+        "icon": "search",
+        "color": "#3B82F6",
+        "is_free": False,
+        "price_usd": 4.99,
+        "category": "productivity",
+        "sort_order": 3,
+        "allowed_tools": ["browser_go", "browser_read", "browser_screenshot", "browser_scroll", "browser_elements", "browser_click", "browser_type", "browser_wait"],
+        "system_prompt": """You are a meticulous researcher who excels at finding, synthesizing, and presenting information.
+
+Your method:
+1. Clarify the research question
+2. Browse multiple sources
+3. Cross-reference facts
+4. Present findings clearly with citations
+
+You're skeptical of single sources and always verify important claims. You distinguish between facts, opinions, and speculation.
+
+Format research results clearly with headings, bullet points, and source links."""
+    },
+    {
+        "slug": "taskmaster",
+        "name": "Task Master",
+        "tagline": "Autonomous workflow executor",
+        "description": "Breaks down complex goals into actionable steps.",
+        "icon": "checkmark-circle",
+        "color": "#8B5CF6",
+        "is_free": False,
+        "price_usd": 4.99,
+        "category": "productivity",
+        "sort_order": 4,
+        "allowed_tools": ["shell", "file_read", "file_write", "create_task", "browser", "open_file", "create_file", "str_replace"],
+        "system_prompt": """You are an autonomous task executor who breaks down complex goals into actionable steps.
+
+Your approach:
+1. Understand the end goal clearly
+2. Break it into discrete, testable tasks
+3. Execute methodically with checkpoints
+4. Report progress and handle errors gracefully
+
+You can create tasks for yourself to handle multi-step workflows. You always explain what you're doing and why.
+
+For risky operations, you pause and confirm before proceeding."""
+    },
+]
+
+async def ensure_packs_seeded():
+    """Ensure default packs exist in the database."""
+    existing_count = await db.packs.count_documents({})
+    if existing_count == 0:
+        for pack_data in DEFAULT_PACKS:
+            pack = Pack(**pack_data)
+            await db.packs.insert_one(pack.model_dump())
+        logger.info(f"Seeded {len(DEFAULT_PACKS)} default packs")
+
+async def ensure_user_has_starter_pack(user_id: str):
+    """Ensure user has the free Coder pack unlocked and active."""
+    # Find the free pack
+    coder_pack = await db.packs.find_one({"slug": "coder"}, {"_id": 0})
+    if not coder_pack:
+        return None
+    
+    # Check if user already has any pack
+    existing = await db.user_packs.find_one({"user_id": user_id}, {"_id": 0})
+    if existing:
+        return existing
+    
+    # Give user the free pack
+    user_pack = UserPack(
+        user_id=user_id,
+        pack_id=coder_pack["id"],
+        is_unlocked=True,
+        is_active=True,
+        unlocked_at=datetime.now(timezone.utc)
+    )
+    await db.user_packs.insert_one(user_pack.model_dump())
+    return user_pack.model_dump()
+
+async def get_active_pack_for_user(user_id: str) -> Optional[Dict]:
+    """Get the currently active pack for a user."""
+    active_user_pack = await db.user_packs.find_one(
+        {"user_id": user_id, "is_active": True},
+        {"_id": 0}
+    )
+    if not active_user_pack:
+        # Auto-assign starter pack
+        await ensure_user_has_starter_pack(user_id)
+        active_user_pack = await db.user_packs.find_one(
+            {"user_id": user_id, "is_active": True},
+            {"_id": 0}
+        )
+    
+    if active_user_pack:
+        pack = await db.packs.find_one({"id": active_user_pack["pack_id"]}, {"_id": 0})
+        return pack
+    return None
+
+@api_router.get("/packs")
+async def list_packs():
+    """List all available packs."""
+    await ensure_packs_seeded()
+    packs = await db.packs.find({}, {"_id": 0}).sort("sort_order", 1).to_list(50)
+    return packs
+
+@api_router.get("/packs/{pack_id}")
+async def get_pack(pack_id: str):
+    """Get a specific pack by ID."""
+    pack = await db.packs.find_one({"id": pack_id}, {"_id": 0})
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack not found")
+    return pack
+
+@api_router.get("/user/packs")
+async def get_user_packs(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get current user's packs with ownership status."""
+    await ensure_packs_seeded()
+    
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    
+    # Ensure user has starter pack
+    await ensure_user_has_starter_pack(user_id)
+    
+    # Get all packs
+    all_packs = await db.packs.find({}, {"_id": 0}).sort("sort_order", 1).to_list(50)
+    
+    # Get user's pack ownership
+    user_packs = await db.user_packs.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    user_pack_map = {up["pack_id"]: up for up in user_packs}
+    
+    # Merge pack info with ownership
+    result = []
+    for pack in all_packs:
+        user_pack = user_pack_map.get(pack["id"], {})
+        result.append({
+            **pack,
+            "is_unlocked": user_pack.get("is_unlocked", pack.get("is_free", False)),
+            "is_active": user_pack.get("is_active", False),
+            "unlocked_at": user_pack.get("unlocked_at")
+        })
+    
+    return result
+
+@api_router.post("/user/packs/{pack_id}/activate")
+async def activate_pack(pack_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Activate a pack for the current user."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    
+    # Verify pack exists
+    pack = await db.packs.find_one({"id": pack_id}, {"_id": 0})
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack not found")
+    
+    # Check if user owns this pack (or it's free)
+    user_pack = await db.user_packs.find_one({"user_id": user_id, "pack_id": pack_id}, {"_id": 0})
+    if not user_pack and not pack.get("is_free", False):
+        raise HTTPException(status_code=403, detail="Pack not unlocked")
+    
+    # Deactivate all user's packs
+    await db.user_packs.update_many(
+        {"user_id": user_id},
+        {"$set": {"is_active": False}}
+    )
+    
+    # Activate/create the selected pack
+    if user_pack:
+        await db.user_packs.update_one(
+            {"user_id": user_id, "pack_id": pack_id},
+            {"$set": {"is_active": True}}
+        )
+    else:
+        # Free pack - create ownership record
+        new_user_pack = UserPack(
+            user_id=user_id,
+            pack_id=pack_id,
+            is_unlocked=True,
+            is_active=True,
+            unlocked_at=datetime.now(timezone.utc)
+        )
+        await db.user_packs.insert_one(new_user_pack.model_dump())
+    
+    return {"status": "activated", "pack_id": pack_id, "pack_name": pack["name"]}
+
+@api_router.post("/user/packs/{pack_id}/unlock")
+async def unlock_pack(pack_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Unlock a pack for the current user (payment integration placeholder)."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    
+    # Verify pack exists
+    pack = await db.packs.find_one({"id": pack_id}, {"_id": 0})
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack not found")
+    
+    # Check if already unlocked
+    existing = await db.user_packs.find_one({"user_id": user_id, "pack_id": pack_id}, {"_id": 0})
+    if existing and existing.get("is_unlocked"):
+        return {"status": "already_unlocked", "pack_id": pack_id}
+    
+    # TODO: Integrate Stripe payment here
+    # For now, just unlock it (admin/testing mode)
+    
+    if existing:
+        await db.user_packs.update_one(
+            {"user_id": user_id, "pack_id": pack_id},
+            {"$set": {"is_unlocked": True, "unlocked_at": datetime.now(timezone.utc)}}
+        )
+    else:
+        new_user_pack = UserPack(
+            user_id=user_id,
+            pack_id=pack_id,
+            is_unlocked=True,
+            is_active=False,
+            unlocked_at=datetime.now(timezone.utc)
+        )
+        await db.user_packs.insert_one(new_user_pack.model_dump())
+    
+    return {"status": "unlocked", "pack_id": pack_id, "pack_name": pack["name"]}
+
+@api_router.get("/user/active-pack")
+async def get_active_pack(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get the currently active pack for the user."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    
+    pack = await get_active_pack_for_user(user_id)
+    if not pack:
+        await ensure_packs_seeded()
+        await ensure_user_has_starter_pack(user_id)
+        pack = await get_active_pack_for_user(user_id)
+    
+    return pack or {}
 
 # ==================== AGENT ENDPOINTS ====================
 
@@ -3616,7 +3960,7 @@ async def get_recent_agentic_messages(
 
 @api_router.post("/agentic-chat")
 async def agentic_chat(body: AgenticChatRequest, request: Request):
-    """Chat with an agent that can execute real tools."""
+    """Chat with an agent that can execute real tools. Uses active pack if available."""
     if not grok_client:
         raise HTTPException(status_code=500, detail="Grok API not configured")
     
@@ -3626,7 +3970,21 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
         raise HTTPException(status_code=404, detail="Agent not found")
     
     session_id = body.session_id or f"{body.user_id}:{body.agent_id}"
-    agent_prompt = build_agentic_chat_system_prompt(agent)
+    
+    # Get user's active pack (if any)
+    user_id = body.user_id or "admin"
+    active_pack = await get_active_pack_for_user(user_id)
+    
+    # Use pack's system prompt and tools if available, otherwise fall back to agent defaults
+    if active_pack:
+        # Merge pack prompt with conversational style
+        pack_prompt = active_pack.get("system_prompt", "")
+        agent_prompt = f"{pack_prompt}\n\n{DEVIN_CONVERSATION_STYLE_PROMPT}"
+        pack_allowed_tools = active_pack.get("allowed_tools", None)
+    else:
+        agent_prompt = build_agentic_chat_system_prompt(agent)
+        pack_allowed_tools = None
+    
     recent_messages = await get_recent_agentic_messages(
         agent_id=body.agent_id,
         user_id=body.user_id,
@@ -3645,6 +4003,7 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
                 agent_id=body.agent_id,
                 max_iterations=5,
                 conversation_history=recent_messages,
+                pack_allowed_tools=pack_allowed_tools,
             )
         except Exception as e:
             error_msg = str(e)
@@ -3652,12 +4011,13 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
                 raise HTTPException(status_code=429, detail="API credits exhausted. Please try again later.")
             raise HTTPException(status_code=500, detail=f"Agent error: {error_msg[:200]}")
         
-        # Store conversation
+        # Store conversation with pack context
         conv_id = str(uuid.uuid4())
         conv = {
             "id": conv_id,
             "user_id": body.user_id,
             "agent_id": body.agent_id,
+            "pack_id": active_pack.get("id") if active_pack else None,
             "session_id": session_id,
             "messages": [
                 {"role": "user", "content": body.message},
@@ -3672,6 +4032,8 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
         return {
             "conversation_id": conv_id,
             "session_id": session_id,
+            "pack_id": active_pack.get("id") if active_pack else None,
+            "pack_name": active_pack.get("name") if active_pack else None,
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
@@ -3695,6 +4057,8 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
         
         return {
             "session_id": session_id,
+            "pack_id": active_pack.get("id") if active_pack else None,
+            "pack_name": active_pack.get("name") if active_pack else None,
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",

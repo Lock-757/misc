@@ -92,6 +92,21 @@ interface Permission {
   requires_approval: boolean;
 }
 
+interface Pack {
+  id: string;
+  slug: string;
+  name: string;
+  tagline: string;
+  description: string;
+  icon: string;
+  color: string;
+  is_free: boolean;
+  price_usd: number;
+  is_unlocked: boolean;
+  is_active: boolean;
+  allowed_tools: string[];
+}
+
 const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'shell', name: 'Shell Commands', description: 'Execute terminal commands', enabled: true, requires_approval: false },
   { id: 'file_read', name: 'File Read', description: 'Read files in workspace', enabled: true, requires_approval: false },
@@ -138,7 +153,12 @@ export default function DevinLabScreen() {
   const [chainToTask, setChainToTask] = useState<string>('');
   
   // Tab state - Chat is now first/default
-  const [activeTab, setActiveTab] = useState<'chat' | 'create' | 'queue' | 'history' | 'memory' | 'permissions'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'create' | 'queue' | 'history' | 'packs' | 'memory' | 'permissions'>('chat');
+  
+  // Pack state
+  const [packs, setPacks] = useState<Pack[]>([]);
+  const [activePack, setActivePack] = useState<Pack | null>(null);
+  const [packSwitching, setPackSwitching] = useState(false);
   
   // Modal state
   const [showChainModal, setShowChainModal] = useState(false);
@@ -212,19 +232,63 @@ export default function DevinLabScreen() {
       const devin = agentsRes.data?.find((a: any) => a.name?.toLowerCase().includes('devin'));
       if (devin) setDevinId(devin.id);
       
-      const [tasksRes, runsRes, memoriesRes] = await Promise.all([
+      const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes] = await Promise.all([
         axios.get(`${API_URL}/api/devin/tasks`, { headers }),
         axios.get(`${API_URL}/api/devin/runs`, { headers }),
         devin ? axios.get(`${API_URL}/api/agents/${devin.id}/memories`, { headers }) : Promise.resolve({ data: [] }),
+        axios.get(`${API_URL}/api/user/packs`, { headers }),
+        axios.get(`${API_URL}/api/user/active-pack`, { headers }),
       ]);
       
       setTasks(tasksRes.data || []);
       setRuns(runsRes.data || []);
       setMemories(memoriesRes.data || []);
+      setPacks(packsRes.data || []);
+      if (activePackRes.data?.id) {
+        setActivePack(activePackRes.data);
+      }
     } catch (err) {
       console.log('Load error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const switchPack = async (packId: string) => {
+    if (packSwitching) return;
+    
+    const pack = packs.find(p => p.id === packId);
+    if (!pack) return;
+    
+    // Check if pack is unlocked
+    if (!pack.is_unlocked && !pack.is_free) {
+      // For now, auto-unlock (payment integration later)
+      try {
+        setPackSwitching(true);
+        await axios.post(`${API_URL}/api/user/packs/${packId}/unlock`, {}, { headers: getHeaders() });
+      } catch (err) {
+        console.log('Unlock error:', err);
+        setPackSwitching(false);
+        return;
+      }
+    }
+    
+    try {
+      setPackSwitching(true);
+      await axios.post(`${API_URL}/api/user/packs/${packId}/activate`, {}, { headers: getHeaders() });
+      
+      // Clear chat when switching packs (new context)
+      setChatMessages([]);
+      const nextChatSessionId = createChatSessionId();
+      persistChatSessionId(nextChatSessionId);
+      if (Platform.OS === 'web') localStorage.removeItem('devin_chat');
+      
+      // Refresh data
+      await loadData();
+    } catch (err) {
+      console.log('Switch pack error:', err);
+    } finally {
+      setPackSwitching(false);
     }
   };
 
@@ -450,14 +514,17 @@ export default function DevinLabScreen() {
         {/* Header */}
         <View testID="devin-app-header" style={styles.header}>
           <View style={styles.headerLeft}>
-            <LinearGradient colors={[C.accent, '#16A34A']} style={styles.headerLogo}>
-              <Ionicons name="flash" size={20} color="#fff" />
+            <LinearGradient colors={[activePack?.color || C.accent, activePack?.color ? `${activePack.color}99` : '#16A34A']} style={styles.headerLogo}>
+              <Ionicons name={(activePack?.icon || 'flash') as any} size={20} color="#fff" />
             </LinearGradient>
-            <Text style={styles.headerTitle}>Devin</Text>
+            <View>
+              <Text style={styles.headerTitle}>{activePack?.name || 'Agent'}</Text>
+              {activePack && <Text style={styles.headerPackLabel}>Active Pack</Text>}
+            </View>
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity testID="refresh-data-button" onPress={() => void loadData()} style={styles.headerBtn}>
-              <Ionicons name="refresh" size={20} color={C.accent} />
+              <Ionicons name="refresh" size={20} color={activePack?.color || C.accent} />
             </TouchableOpacity>
             <TouchableOpacity testID="logout-button" onPress={handleLogout} style={styles.logoutBtn}>
               <Ionicons name="log-out-outline" size={18} color={C.danger} />
@@ -470,6 +537,7 @@ export default function DevinLabScreen() {
           <View style={styles.tabBar}>
             {[
               { key: 'chat', icon: 'chatbubbles', label: 'Chat' },
+              { key: 'packs', icon: 'apps', label: 'Packs' },
               { key: 'create', icon: 'add-circle', label: 'Task' },
               { key: 'queue', icon: 'list', label: `Queue (${tasks.length})` },
               { key: 'history', icon: 'time', label: 'History' },
@@ -733,6 +801,67 @@ export default function DevinLabScreen() {
                 ))
               )}
             </ScrollView>
+          ) : activeTab === 'packs' ? (
+            // ============ PACKS TAB ============
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.sectionTitle}>Agent Packs</Text>
+              <Text style={styles.sectionSubtitle}>Switch between specialized agent modes</Text>
+              
+              {packSwitching && (
+                <View style={styles.packSwitchingBanner}>
+                  <ActivityIndicator size="small" color={C.accent} />
+                  <Text style={styles.packSwitchingText}>Switching pack...</Text>
+                </View>
+              )}
+              
+              <View style={styles.packsGrid}>
+                {packs.map((pack) => (
+                  <TouchableOpacity 
+                    key={pack.id}
+                    testID={`pack-card-${pack.slug}`}
+                    style={[
+                      styles.packCard, 
+                      pack.is_active && styles.packCardActive,
+                      { borderColor: pack.is_active ? pack.color : C.border }
+                    ]}
+                    onPress={() => !pack.is_active && switchPack(pack.id)}
+                    disabled={pack.is_active || packSwitching}
+                  >
+                    <View style={[styles.packIconContainer, { backgroundColor: pack.color + '20' }]}>
+                      <Ionicons name={pack.icon as any} size={28} color={pack.color} />
+                    </View>
+                    <Text style={styles.packName}>{pack.name}</Text>
+                    <Text style={styles.packTagline} numberOfLines={1}>{pack.tagline}</Text>
+                    
+                    <View style={styles.packFooter}>
+                      {pack.is_active ? (
+                        <View style={[styles.packBadge, { backgroundColor: pack.color + '30', borderColor: pack.color }]}>
+                          <Text style={[styles.packBadgeText, { color: pack.color }]}>ACTIVE</Text>
+                        </View>
+                      ) : pack.is_unlocked || pack.is_free ? (
+                        <View style={[styles.packBadge, { backgroundColor: C.success + '20', borderColor: C.success }]}>
+                          <Text style={[styles.packBadgeText, { color: C.success }]}>READY</Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.packBadge, { backgroundColor: C.warning + '20', borderColor: C.warning }]}>
+                          <Text style={[styles.packBadgeText, { color: C.warning }]}>${pack.price_usd}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              {activePack && (
+                <View style={styles.activePackInfo}>
+                  <Text style={styles.activePackInfoTitle}>Current Pack: {activePack.name}</Text>
+                  <Text style={styles.activePackInfoDesc}>{activePack.description}</Text>
+                  <Text style={styles.activePackInfoTools}>
+                    Tools: {activePack.allowed_tools?.slice(0, 5).join(', ')}{activePack.allowed_tools?.length > 5 ? '...' : ''}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
           ) : (
             // ============ PERMISSIONS TAB ============
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -825,6 +954,7 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerLogo: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 20, fontWeight: '700', color: C.text },
+  headerPackLabel: { fontSize: 10, color: C.muted, marginTop: -2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerBtn: { padding: 8 },
   logoutBtn: { padding: 8 },
@@ -946,6 +1076,23 @@ const styles = StyleSheet.create({
   approvalTag: { backgroundColor: 'rgba(245,158,11,0.2)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
   approvalTagText: { fontSize: 8, fontWeight: '600', color: C.warning },
   permDesc: { fontSize: 11, color: C.muted },
+
+  // Packs
+  packSwitchingBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.card, padding: 12, borderRadius: 10, marginBottom: 16 },
+  packSwitchingText: { color: C.text, fontSize: 14 },
+  packsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  packCard: { width: '47%', backgroundColor: C.card, borderRadius: 16, padding: 16, borderWidth: 2, borderColor: C.border },
+  packCardActive: { backgroundColor: 'rgba(255,255,255,0.02)' },
+  packIconContainer: { width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  packName: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 4 },
+  packTagline: { fontSize: 12, color: C.muted, marginBottom: 12 },
+  packFooter: { flexDirection: 'row', alignItems: 'center' },
+  packBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  packBadgeText: { fontSize: 10, fontWeight: '700' },
+  activePackInfo: { backgroundColor: C.card, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: C.border },
+  activePackInfoTitle: { fontSize: 14, fontWeight: '700', color: C.text, marginBottom: 8 },
+  activePackInfoDesc: { fontSize: 13, color: C.muted, lineHeight: 18, marginBottom: 8 },
+  activePackInfoTools: { fontSize: 11, color: C.muted, fontStyle: 'italic' },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
