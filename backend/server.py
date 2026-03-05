@@ -246,6 +246,8 @@ def parse_tool_calls(response_text: str) -> list:
         (r'<browser_elements[^>]*/>', 'browser_elements'),
         (r'<browser_wait[^>]*/>', 'browser_wait'),
         (r'<browser_scroll[^>]*/>', 'browser_scroll'),
+        # Self-tasking
+        (r'<create_task[^>]*>(.*?)</create_task>', 'create_task'),
     ]
     
     for pattern, tool_type in patterns:
@@ -653,6 +655,47 @@ async def execute_tool(tool: dict, agent_id: str = None) -> str:
             direction = attrs.get('direction', 'down')
             amount = int(attrs.get('amount', '500'))
             return await browser_scroll(direction, amount)
+        
+        elif tool_type == 'create_task':
+            # Self-tasking - Devin creates a task for itself
+            attrs = extract_xml_attrs(raw)
+            task_title = attrs.get('title', 'Self-created task')
+            task_priority = attrs.get('priority', 'normal')
+            task_desc = content.strip() if content else 'No description'
+            
+            # Self-created tasks ALWAYS require approval
+            task_id = str(uuid.uuid4())
+            risk_level = classify_devin_risk(f"{task_title}\n{task_desc}")
+            
+            task_doc = {
+                "id": task_id,
+                "title": f"[Self] {task_title}",
+                "task": task_desc,
+                "priority": task_priority,
+                "risk_level": risk_level,
+                "requires_approval": True,  # Always require approval for self-created tasks
+                "is_approved": False,
+                "status": "queued",
+                "created_by": f"devin:{agent_id}" if agent_id else "devin:self",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "run_count": 0,
+                "last_run_summary": "",
+                "last_error": "",
+                "next_task_id": None,
+                "chain_on_success_only": True,
+            }
+            
+            await db.devin_tasks.insert_one(task_doc)
+            
+            return f"""[Task Created - Pending Approval]
+ID: {task_id}
+Title: {task_title}
+Priority: {task_priority}
+Risk Level: {risk_level}
+Status: REQUIRES USER APPROVAL
+
+The user must approve this task before you can run it."""
         
         else:
             return f"[Unknown tool type: {tool_type}]"
@@ -3539,6 +3582,10 @@ DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with p
 <recall_memories/> - Retrieve your past memories
 <message_user>Important message for the user</message_user> - Communicate findings
 
+## SELF-TASKING (Requires Approval)
+<create_task title="Task name" priority="normal">Detailed task description</create_task> - Create a new task for yourself
+Note: Self-created tasks require user approval before you can run them. This is a safety measure.
+
 ## SCREEN INTERACTION WORKFLOW
 When you need to interact with a UI:
 1. Navigate: <browser_go url="..."/>
@@ -3553,12 +3600,14 @@ When you need to interact with a UI:
 - Save important learnings to memory for future reference
 - Protected paths (/app/backend/.env, /app/backend/server.py) cannot be modified
 - Be concise but thorough in your responses
+- You CANNOT grant yourself new permissions - only the user can do that
 
 ## SELF-IMPROVEMENT
 You can improve your own capabilities by:
 - Learning from failures and saving those learnings
 - Building on past successful approaches
 - Identifying patterns in recurring tasks
+- Creating follow-up tasks for complex workflows
 """
 
 
