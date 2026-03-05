@@ -2,116 +2,99 @@
 
 ## Original Problem Statement
 A focused AI agent app centered on "Devin" - an autonomous super-agent with:
+- Conversational chat interface (NEW)
+- Task-based workflow for discrete jobs
 - Shell commands & file operations
 - Browser/screen control
 - Self-tasking with approval gates
 - Persistent memory
 - Permission system for capability control
-- Task chaining for complex workflows
+
+## User Modes
+
+### 1. Chat Mode (Default)
+For natural conversation with Devin:
+- Back-and-forth dialogue
+- Tool execution shown inline
+- Chat history persisted locally
+- Quick suggestion prompts
+
+### 2. Task Mode
+For discrete, trackable work:
+- Create tasks with title/description
+- Priority levels (low/normal/high)
+- Task chaining for workflows
+- Quality scoring & auto-retry
 
 ## Core Capabilities
 
-### 1. File & Shell Operations
-- Shell command execution (timeout: 30s)
+### File & Shell Operations
+- Shell command execution
 - File read/write/edit
-- Search in files (grep)
-- Find files by pattern
+- Search in files
 
-### 2. Browser/Screen Control
-Devin can interact with web interfaces:
-- `<browser_go url="..."/>` - Navigate to URL
-- `<browser_screenshot/>` - Capture current page
-- `<browser_click selector="..." text="..."/>` - Click elements
-- `<browser_type selector="..." text="..."/>` - Type into inputs
-- `<browser_read/>` - Get page text content
-- `<browser_elements/>` - List clickable items
-- `<browser_wait/>` - Wait for elements
-- `<browser_scroll/>` - Scroll page
+### Browser/Screen Control
+- Navigate URLs, take screenshots
+- Click elements, type into inputs
+- Read page content, scroll
 
-### 3. Self-Tasking (NEW)
-- `<create_task title="..." priority="...">description</create_task>`
-- Self-created tasks are prefixed with `[Self]`
-- **ALWAYS require user approval** before execution
-- Devin cannot bypass approval gate
+### Self-Tasking
+- Devin can create tasks for himself
+- **ALWAYS requires approval** before execution
+- Cannot bypass approval gate
 
-### 4. Persistent Memory
-- Memories auto-injected before each run
-- Categories: learning, fact, preference, error
+### Persistent Memory
+- Auto-injected before each interaction
+- Categories: learning, fact, preference
 - Viewable/deletable in Memory tab
 
-### 5. Task Chaining
-- Tasks can link via `next_task_id`
-- Auto-triggers next task on completion
-- `chain_on_success_only` flag for conditional chains
-
-### 6. Quality Scoring & Auto-Retry
-- Each run scored 0-100 (Grade A-F)
-- Auto-retries up to 3 times if score < 40
-- Retries include context about previous failure
-
-### 7. Permission System (NEW)
-User controls what Devin can do:
-
-| Permission | Default | Requires Approval |
-|------------|---------|-------------------|
-| Shell Commands | ON | No |
-| File Read | ON | No |
-| File Write | ON | Yes |
-| Browser Control | ON | No |
-| Self-Tasking | ON | Yes |
-| Self-Modification | **OFF** | Yes |
-| Camera Access | OFF | Yes |
-| Send Notifications | ON | No |
-| Launch Apps | OFF | Yes |
-| Contacts Access | OFF | Yes |
-| Calendar Access | OFF | Yes |
-| Location Access | OFF | Yes |
-
-**Key Safeguard**: Devin CANNOT grant himself new permissions - only the user can enable/disable capabilities.
+### Permission System
+User controls capabilities via toggles:
+- Self-Modification is OFF by default
+- Devin cannot grant himself permissions
 
 ## Current Architecture
 
-### Frontend (5 Tabs)
+### Frontend (6 Tabs)
 ```
 /app/frontend/app/index.tsx
-├── New Tab      - Create tasks
-├── Queue Tab    - View/run tasks
+├── Chat Tab     - Conversational interface (DEFAULT)
+├── Task Tab     - Create discrete tasks
+├── Queue Tab    - View/run pending tasks
 ├── History Tab  - Run history with quality scores
-├── Memory Tab   - View Devin's persistent memories
-└── Permissions  - Control Devin's capabilities
+├── Memory Tab   - View Devin's memories
+└── Perms Tab    - Control permissions
 ```
 
 ### Backend APIs
 ```
+POST   /api/agentic-chat             # Chat with Devin
 POST   /api/devin/tasks              # Create task
 GET    /api/devin/tasks              # List tasks  
 DELETE /api/devin/tasks/{id}         # Delete task
-POST   /api/devin/tasks/{id}/approve-risk  # Approve high-risk
-POST   /api/devin/tasks/{id}/run     # Execute (dry/live)
+POST   /api/devin/tasks/{id}/approve-risk  
+POST   /api/devin/tasks/{id}/run     # Execute task
 GET    /api/devin/runs               # Run history
 GET    /api/agents/{id}/memories     # View memories
-DELETE /api/agents/{id}/memories/{mid}  # Delete memory
 ```
 
 ## Completed (March 5, 2026)
-- [x] Stripped to single-page Devin Lab
+- [x] Stripped to Devin-focused app
 - [x] Admin-only password gate
 - [x] Enhanced reasoning framework
-- [x] Quality scoring (0-100, Grade A-F)
-- [x] Auto-retry with max 3 attempts
+- [x] Quality scoring & auto-retry
 - [x] Memory injection before runs
-- [x] Browser automation (8 tools)
+- [x] Browser automation tools
 - [x] Task chaining support
-- [x] **Memory viewer tab** (NEW)
-- [x] **Task chaining UI** (NEW)
-- [x] **Self-tasking with approval gates** (NEW)
-- [x] **Permission system UI** (NEW)
+- [x] Memory viewer tab
+- [x] Permission system UI
+- [x] Self-tasking with approval gates
+- [x] **Chat tab with conversational interface** (NEW)
 
-## Database Collections
-- `devin_tasks` - Task queue with chaining
-- `devin_runs` - Execution history with quality
-- `agent_memories` - Persistent memory
-- `agents` - Agent configurations
+## Next Steps (P0)
+1. **Backend permission enforcement** - Block tools if permission disabled
+2. **Device control tools** - Camera, notifications, app launching
+3. **Real-time execution logs** - Stream tool outputs live
 
 ## Environment Variables
 - `EXPO_PUBLIC_ADMIN_SECRET` - Admin password
@@ -120,15 +103,3 @@ DELETE /api/agents/{id}/memories/{mid}  # Delete memory
 
 ## Credentials
 - **Admin Password**: `forge_master_2025`
-
-## Next Steps (P0)
-1. **Real-time execution logs** - Stream tool outputs as they happen
-2. **Device control tools** - Camera, notifications, app launching
-3. **Backend permission enforcement** - Actually check permissions before tool execution
-
-## Future Enhancements (P1/P2)
-- Screenshot gallery viewer
-- Task templates for common operations
-- Scheduled/recurring tasks
-- Export run history
-- Voice commands for Devin
