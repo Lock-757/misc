@@ -514,6 +514,7 @@ db = client[os.environ['DB_NAME']]
 # Grok API setup
 GROK_API_KEY = os.environ.get('GROK_API_KEY', '')
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 
 # Use Grok as primary (for spicy mode support)
 LLM_API_KEY = GROK_API_KEY if GROK_API_KEY else EMERGENT_LLM_KEY
@@ -554,6 +555,40 @@ def moderation_block_detail(media_type: str) -> str:
         f"Your {media_type} prompt was blocked by provider safety checks. "
         "Please rephrase and avoid explicit, illegal, or sensitive-leak style requests."
     )
+
+
+def classify_devin_risk(task_text: str) -> str:
+    normalized = (task_text or "").lower()
+    high_risk_markers = [
+        "delete",
+        "drop",
+        "shutdown",
+        "wipe",
+        "remove all",
+        "production",
+        "credential",
+        "secret",
+        "token",
+        "security",
+        "refund",
+        "exposure",
+        "incident",
+        "legal",
+    ]
+    medium_risk_markers = ["deploy", "migrate", "schema", "auth", "billing", "payment"]
+
+    if any(marker in normalized for marker in high_risk_markers):
+        return "high"
+    if any(marker in normalized for marker in medium_risk_markers):
+        return "medium"
+    return "low"
+
+
+def summarize_devin_output(text: str, limit: int = 260) -> str:
+    if not text:
+        return ""
+    compact = " ".join(text.strip().split())
+    return compact if len(compact) <= limit else compact[:limit] + "..."
 
 # ==================== MODELS ====================
 
@@ -900,6 +935,48 @@ class SearchResult(BaseModel):
     context: str
     timestamp: datetime
 
+
+# Devin Ops Models
+class DevinTaskCreate(BaseModel):
+    title: str
+    task: str
+    priority: str = "normal"  # low, normal, high
+
+
+class DevinTask(BaseModel):
+    id: str
+    title: str
+    task: str
+    priority: str = "normal"
+    risk_level: str = "low"  # low, medium, high
+    requires_approval: bool = False
+    is_approved: bool = False
+    status: str = "queued"  # queued, running, completed, failed
+    created_by: str
+    created_at: str
+    updated_at: str
+    run_count: int = 0
+    last_run_summary: str = ""
+    last_error: str = ""
+
+
+class DevinTaskRunRequest(BaseModel):
+    dry_run: bool = False
+
+
+class DevinRunRecord(BaseModel):
+    id: str
+    task_id: str
+    agent_id: str
+    created_by: str = ""
+    status: str
+    dry_run: bool = False
+    iterations: int = 0
+    response: str = ""
+    response_summary: str = ""
+    tool_results: List[Dict[str, Any]] = []
+    created_at: str
+
 # ==================== ROOT ENDPOINT ====================
 
 @api_router.get("/")
@@ -955,6 +1032,21 @@ async def get_current_user(request: Request, session_token: Optional[str] = Cook
     # Get user
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     return user
+
+
+async def get_actor_context(request: Request, session_token: Optional[str] = Cookie(None)) -> Dict[str, Any]:
+    user = await get_current_user(request, session_token)
+    if user:
+        return {
+            "user_id": user.get("user_id", "guest"),
+            "is_admin": bool(user.get("is_admin", False)),
+        }
+
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if ADMIN_SECRET and admin_key == ADMIN_SECRET:
+        return {"user_id": "admin_master", "is_admin": True}
+
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 # ==================== AUTH ENDPOINTS ====================
 
@@ -3177,6 +3269,224 @@ async def create_tool_agent(body: CreateToolAgentRequest):
     await db.agents.insert_one(agent)
     return {"id": agent_id, "name": body.name, "status": "created"}
 
+
+# ==================== DEVIN OPS ====================
+
+async def get_devin_agent_doc() -> Dict[str, Any]:
+    await ensure_core_agents()
+    devin = await db.agents.find_one({"name": {"$regex": "^(Devin|Devon)$", "$options": "i"}}, {"_id": 0})
+    if not devin:
+        raise HTTPException(status_code=404, detail="Devin agent not found")
+    return devin
+
+
+@api_router.post("/devin/tasks", response_model=DevinTask)
+async def create_devin_task(body: DevinTaskCreate, request: Request, session_token: Optional[str] = Cookie(None)):
+    actor = await get_actor_context(request, session_token)
+    now = datetime.now(timezone.utc).isoformat()
+    risk_level = classify_devin_risk(f"{body.title}\n{body.task}")
+    requires_approval = risk_level == "high"
+
+    task_doc = {
+        "id": str(uuid.uuid4()),
+        "title": body.title.strip(),
+        "task": body.task.strip(),
+        "priority": body.priority,
+        "risk_level": risk_level,
+        "requires_approval": requires_approval,
+        "is_approved": False,
+        "status": "queued",
+        "created_by": actor["user_id"],
+        "created_at": now,
+        "updated_at": now,
+        "run_count": 0,
+        "last_run_summary": "",
+        "last_error": "",
+    }
+
+    await db.devin_tasks.insert_one(task_doc)
+    return DevinTask(**task_doc)
+
+
+@api_router.get("/devin/tasks", response_model=List[DevinTask])
+async def list_devin_tasks(
+    request: Request,
+    status: Optional[str] = None,
+    session_token: Optional[str] = Cookie(None),
+):
+    actor = await get_actor_context(request, session_token)
+    query: Dict[str, Any] = {} if actor["is_admin"] else {"created_by": actor["user_id"]}
+    if status:
+        query["status"] = status
+
+    tasks = await db.devin_tasks.find(query, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    return [DevinTask(**task) for task in tasks]
+
+
+@api_router.post("/devin/tasks/{task_id}/approve-risk")
+async def approve_devin_task_risk(task_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    actor = await get_actor_context(request, session_token)
+    task = await db.devin_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.get("created_by") != actor["user_id"] and not actor["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not allowed to approve this task")
+
+    await db.devin_tasks.update_one(
+        {"id": task_id},
+        {"$set": {"is_approved": True, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"status": "approved", "task_id": task_id}
+
+
+@api_router.post("/devin/tasks/{task_id}/run", response_model=DevinRunRecord)
+async def run_devin_task(
+    task_id: str,
+    body: DevinTaskRunRequest,
+    request: Request,
+    session_token: Optional[str] = Cookie(None),
+):
+    actor = await get_actor_context(request, session_token)
+    task = await db.devin_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.get("created_by") != actor["user_id"] and not actor["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not allowed to run this task")
+
+    if task.get("requires_approval") and not task.get("is_approved"):
+        raise HTTPException(status_code=403, detail="High-risk task requires approval before run")
+
+    devin = await get_devin_agent_doc()
+    now = datetime.now(timezone.utc).isoformat()
+
+    await db.devin_tasks.update_one(
+        {"id": task_id},
+        {"$set": {"status": "running", "updated_at": now, "last_error": ""}},
+    )
+
+    run_doc = {
+        "id": str(uuid.uuid4()),
+        "task_id": task_id,
+        "agent_id": devin.get("id", ""),
+        "created_by": actor["user_id"],
+        "status": "completed",
+        "dry_run": body.dry_run,
+        "iterations": 0,
+        "response": "",
+        "response_summary": "",
+        "tool_results": [],
+        "created_at": now,
+    }
+
+    if body.dry_run:
+        dry_response = (
+            "DRY RUN: Devin would execute this task in staged steps. "
+            "No external model/API call was made."
+        )
+        run_doc.update({
+            "iterations": 1,
+            "response": dry_response,
+            "response_summary": summarize_devin_output(f"{task.get('title', '')}: {dry_response}"),
+        })
+
+        await db.devin_runs.insert_one(run_doc)
+        await db.devin_tasks.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "status": "completed",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "last_run_summary": run_doc["response_summary"],
+                },
+                "$inc": {"run_count": 1},
+            },
+        )
+        return DevinRunRecord(**run_doc)
+
+    try:
+        result = await run_agent_with_tools(
+            devin.get("system_prompt", "You are Devin."),
+            task.get("task", ""),
+            agent_id=devin.get("id"),
+            max_iterations=6,
+        )
+
+        full_response = result.get("response", "")
+        run_doc.update(
+            {
+                "iterations": int(result.get("iterations", 0)),
+                "response": full_response,
+                "response_summary": summarize_devin_output(full_response),
+                "tool_results": result.get("tool_results", []),
+                "status": "completed",
+            }
+        )
+
+        await db.devin_runs.insert_one(run_doc)
+        await db.devin_tasks.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "status": "completed",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "last_run_summary": run_doc["response_summary"],
+                },
+                "$inc": {"run_count": 1},
+            },
+        )
+
+        return DevinRunRecord(**run_doc)
+    except Exception as exc:
+        err = str(exc)
+        run_doc.update(
+            {
+                "status": "failed",
+                "response": "",
+                "response_summary": summarize_devin_output(err),
+            }
+        )
+        await db.devin_runs.insert_one(run_doc)
+        await db.devin_tasks.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "last_error": err[:400],
+                }
+            },
+        )
+        raise HTTPException(status_code=500, detail=f"Devin run failed: {err[:200]}")
+
+
+@api_router.get("/devin/runs", response_model=List[DevinRunRecord])
+async def list_devin_runs(
+    request: Request,
+    task_id: Optional[str] = None,
+    session_token: Optional[str] = Cookie(None),
+):
+    actor = await get_actor_context(request, session_token)
+    query: Dict[str, Any] = {}
+
+    if task_id:
+        query["task_id"] = task_id
+
+    if not actor["is_admin"]:
+        task_ids_docs = await db.devin_tasks.find({"created_by": actor["user_id"]}, {"_id": 0, "id": 1}).to_list(500)
+        task_ids = [doc.get("id") for doc in task_ids_docs if doc.get("id")]
+        if not task_ids:
+            return []
+
+        if "task_id" in query and query["task_id"] not in task_ids:
+            return []
+
+        query["task_id"] = query.get("task_id") or {"$in": task_ids}
+
+    runs = await db.devin_runs.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [DevinRunRecord(**run) for run in runs]
+
 # ==================== AGENT MEMORY SYSTEM ====================
 
 class MemoryEntry(BaseModel):
@@ -3342,8 +3652,6 @@ async def get_audit_log():
     return logs
 
 # ==================== ADMIN ENDPOINTS ====================
-
-ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 
 async def require_admin(request: Request):
     if not ADMIN_SECRET:

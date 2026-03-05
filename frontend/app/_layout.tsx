@@ -38,6 +38,7 @@ export default function RootLayout() {
             <Stack.Screen name="scheduled" options={{ presentation: 'modal' }} />
             <Stack.Screen name="export" options={{ presentation: 'modal' }} />
             <Stack.Screen name="admin" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="devin-lab" options={{ presentation: 'modal' }} />
           </Stack>
         </AuthProvider>
       </SafeAreaProvider>

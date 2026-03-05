@@ -1057,6 +1057,12 @@ export default function ChatScreen() {
                       </View>
                       <Text style={styles.menuLabel}>Agent Config</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/devin-lab'); }} data-testid="menu-devin-lab">
+                      <View style={[styles.menuIcon, { backgroundColor: '#22C55E' + '20' }]}> 
+                        <Ionicons name="sparkles" size={22} color="#22C55E" />
+                      </View>
+                      <Text style={styles.menuLabel}>Devin Lab</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); router.push('/stats'); }}>
                       <View style={[styles.menuIcon, { backgroundColor: METALLIC.accent + '20' }]}>
                         <Ionicons name="analytics" size={22} color={METALLIC.accent} />
