@@ -343,10 +343,19 @@ export default function DevinLabScreen() {
     }
   };
 
-  const togglePermission = (permId: string) => {
+  const togglePermission = async (permId: string) => {
     const updated = permissions.map(p => p.id === permId ? { ...p, enabled: !p.enabled } : p);
     setPermissions(updated);
     if (Platform.OS === 'web') localStorage.setItem('devin_permissions', JSON.stringify(updated));
+    
+    // Sync to backend
+    try {
+      const permMap: Record<string, boolean> = {};
+      updated.forEach(p => permMap[p.id] = p.enabled);
+      await axios.post(`${API_URL}/api/devin/permissions`, { permissions: permMap }, { headers: getHeaders() });
+    } catch (err) {
+      console.log('Failed to sync permissions:', err);
+    }
   };
 
   const getRiskColor = (risk: string) => risk === 'high' ? C.danger : risk === 'medium' ? C.warning : C.success;

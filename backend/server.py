@@ -33,6 +33,62 @@ from playwright.async_api import async_playwright, Browser, Page
 _browser_instance: Browser = None
 _browser_page: Page = None
 
+# Permission System - stored in memory, synced from frontend
+# Maps permission_id -> enabled status
+DEVIN_PERMISSIONS = {
+    "shell": True,
+    "file_read": True,
+    "file_write": True,
+    "browser": True,
+    "self_task": True,
+    "self_modify": False,
+    "camera": False,
+    "notifications": True,
+    "app_launch": False,
+    "contacts": False,
+    "calendar": False,
+    "location": False,
+}
+
+# Map tool types to required permissions
+TOOL_PERMISSION_MAP = {
+    "shell": "shell",
+    "open_file": "file_read",
+    "find_filecontent": "file_read",
+    "find_filename": "file_read",
+    "create_file": "file_write",
+    "str_replace": "file_write",
+    "browser_go": "browser",
+    "browser_screenshot": "browser",
+    "browser_click": "browser",
+    "browser_type": "browser",
+    "browser_read": "browser",
+    "browser_elements": "browser",
+    "browser_wait": "browser",
+    "browser_scroll": "browser",
+    "create_task": "self_task",
+    "self_improve": "self_modify",
+    "device_camera": "camera",
+    "device_notify": "notifications",
+    "device_launch_app": "app_launch",
+    "device_contacts": "contacts",
+    "device_calendar": "calendar",
+    "device_location": "location",
+}
+
+
+def check_permission(tool_type: str) -> tuple[bool, str]:
+    """Check if a tool is allowed based on current permissions."""
+    required_perm = TOOL_PERMISSION_MAP.get(tool_type)
+    if required_perm is None:
+        # No permission required for this tool
+        return True, ""
+    
+    if not DEVIN_PERMISSIONS.get(required_perm, False):
+        return False, f"Permission '{required_perm}' is disabled. Ask the user to enable it in Permissions tab."
+    
+    return True, ""
+
 # ==================== AGENT TOOL EXECUTION ENGINE ====================
 
 WORKSPACE_DIR = "/app"  # Restricted workspace for agent file operations
@@ -279,6 +335,11 @@ async def execute_tool(tool: dict, agent_id: str = None) -> str:
     tool_type = tool['type']
     raw = tool['raw']
     content = tool.get('content', '')
+    
+    # Permission check
+    allowed, err_msg = check_permission(tool_type)
+    if not allowed:
+        return f"[Permission Denied] {err_msg}"
     
     try:
         if tool_type == 'think':
@@ -4365,6 +4426,49 @@ async def admin_get_stats(request: Request):
         "total_images": total_images,
         "total_downloads": total_downloads,
     }
+
+
+# ==================== PERMISSION SYNC API ====================
+
+class PermissionUpdate(BaseModel):
+    permissions: Dict[str, bool]
+
+@api_router.post("/devin/permissions")
+async def update_devin_permissions(body: PermissionUpdate):
+    """Sync permissions from frontend to backend."""
+    global DEVIN_PERMISSIONS
+    for perm_id, enabled in body.permissions.items():
+        if perm_id in DEVIN_PERMISSIONS:
+            DEVIN_PERMISSIONS[perm_id] = enabled
+    return {"status": "updated", "permissions": DEVIN_PERMISSIONS}
+
+@api_router.get("/devin/permissions")
+async def get_devin_permissions():
+    """Get current permission states."""
+    return DEVIN_PERMISSIONS
+
+
+# ==================== DEVICE CONTROL TOOLS ====================
+# These are placeholders that return instructions for now
+# Full implementation requires native mobile modules
+
+async def device_send_notification(title: str, body: str) -> str:
+    """Send a push notification to the device."""
+    # In a real implementation, this would use expo-notifications
+    return f"[Notification Queued] Title: {title}, Body: {body[:100]}"
+
+async def device_get_location() -> str:
+    """Get device location."""
+    return "[Location] Feature requires mobile app with location permissions enabled."
+
+async def device_launch_app(app_name: str) -> str:
+    """Launch another app via deep link."""
+    return f"[App Launch] Would open: {app_name}. Requires mobile app with linking configured."
+
+async def device_access_camera(action: str = "photo") -> str:
+    """Access device camera."""
+    return f"[Camera] Would take {action}. Requires mobile app with camera permissions."
+
 
 # Include router and middleware
 app.include_router(api_router)
