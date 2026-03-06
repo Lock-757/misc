@@ -1,140 +1,109 @@
-# PAUL·E - Product Requirements Document
-
-## Product Name
-**PAUL·E** (stylized as PAUL·E or Paul-E)
-- Triple meaning: Poly (multiple modes) + DALL·E (AI convention) + Human name (approachable)
+# PAUL·E — Product Requirements Document
 
 ## Original Problem Statement
-Build a visually appealing, monetizable mobile agent platform where users can:
-- Choose and activate specialized "packs" for the agent
-- Each pack tailors the agent's personality, skills, and tool access
-- Monetize through one-time pack purchases
+Build a monetizable, customizable AI agent platform named "PAUL·E". Core idea: a "Pack System" where users can purchase specialized agent packs (Coder, Researcher, Companion, etc.) to tailor the agent's personality and skills.
 
-## Product Direction
-**Core Concept**: Customizable agent platform with monetizable "Packs"
+## User Personas
+- **Solo developer / power user**: Wants a capable coding assistant with execution rights
+- **Casual user**: Wants a friendly companion, platonic or intimate
+- **Researcher / productivity user**: Needs browsing + synthesis capabilities
+- **New user (trial)**: Discovers value through the Coder Pro free trial (20 action prompts)
 
-## Pack System (COMPLETED - March 2026)
-
-### Available Packs
-| Pack | Price | Tools | Color |
-|------|-------|-------|-------|
-| Coder | FREE | shell, file ops, browser | Green |
-| Companion | $4.99 | save_memory, recall_memories | Pink |
-| Researcher | $4.99 | All browser tools | Blue |
-| Task Master | $4.99 | shell, files, create_task | Purple |
-
-### Implementation Details
-- **Backend**: `/api/packs`, `/api/user/packs`, `/api/user/active-pack`, pack activation/unlock
-- **Frontend**: Packs tab with grid UI, header shows active pack name + icon + color
-- **Memory**: Pack-specific memory (memories associated with `pack_id`)
-- **Tools**: Tool permissions filtered by pack's `allowed_tools`
-
-## Architecture
-
-### Frontend (Expo/React Native)
+## Core Architecture
 ```
-/app/frontend/app/index.tsx
-├── Chat Tab (default)
-├── Packs Tab 
-├── Task Tab
-├── Queue Tab
-├── History Tab
-├── Memory Tab
-└── Perms Tab
+/app
+├── backend/
+│   ├── server.py           # Monolithic FastAPI server (all routes, agent logic, pack system)
+│   └── requirements.txt
+└── frontend/
+    ├── app/index.tsx       # Monolithic React Native (Expo) app — all tabs including Packs
+    └── .env
 ```
 
-### Backend (FastAPI)
-```
-/app/backend/server.py
-├── Pack System endpoints (lines 1633-1880)
-├── Agentic chat (pack-aware)
-├── Tool execution (pack-filtered)
-├── Memory system (pack-aware)
-```
+## Tech Stack
+- **Frontend**: React Native (Expo), TypeScript
+- **Backend**: FastAPI + MongoDB (Motor)
+- **LLM**: Grok (xAI) — less-restricted, key for Companion pack
+- **Browser automation**: Playwright (Researcher + Task Master packs)
 
-### Database Collections
-- `packs` - Pack definitions
-- `user_packs` - User ownership and activation
-- `agent_memories` - Now includes `pack_id` field
+## What's Been Implemented
 
-## Completed Features
+### Session 1 (March 2026) — Pack System MVP
+- PAUL·E rebrand (from "Devin")
+- 4 initial packs seeded (Coder, Companion, Researcher, Task Master)
+- Backend pack-aware: `/api/agentic-chat` uses active pack's system_prompt + allowed_tools
+- Packs tab in frontend: view packs, switch active pack
+- Header shows active pack name
 
-### PAUL·E Rebrand (March 6, 2026)
-- [x] Backend system prompts updated to PAUL·E
-- [x] Frontend UI text updated (header, chat, placeholders)
-- [x] Agent name in DB updated
+### Session 2 (March 2026) — Revised Pack Structure + Trial System
+- **7 packs** (upsert by slug, always current):
+  | Pack | Price | Tools | Notes |
+  |------|-------|-------|-------|
+  | Coder | FREE | read-only (open_file, find_*) | Baseline fallback |
+  | Friend | $2.99 | save_memory, recall_memories | Platonic companion |
+  | Companion | $4.99 | save_memory, recall_memories | **Age-gated (18+)** |
+  | Coder Pro | $4.99 | shell + full file I/O | Trial: 20 action prompts free |
+  | Researcher | $4.99 | all browser tools | |
+  | Task Master | $7.99 | everything + create_task | |
+  | Innovator | $9.99 | — | **Coming Soon** |
+- **Coder Pro Free Trial**: New users start on Coder Pro (is_trial=True, max 20 action prompts). Smart cap: only counts prompts that trigger tool execution. On expiry, auto-downgraded to Coder.
+- **Age-gate**: Companion requires age verification modal (18+ confirm) before first activation
+- **Coming Soon**: Innovator is disabled/dimmed in UI, activation returns 403
+- **Trial banner**: Shows in Chat tab when user is on trial (e.g. "15/20 builds remaining")
+- **Trial tracking**: `trial_info` returned in every agentic-chat response
 
-### Pack System MVP (March 5, 2026)
-- [x] 4 default packs seeded
-- [x] Pack CRUD APIs
-- [x] User pack ownership tracking
-- [x] Pack activation/switching
-- [x] Tool permissions per pack
-- [x] Header shows active pack
-- [x] Packs tab UI with grid
-- [x] Chat clears on pack switch
+## Key API Endpoints
+- `GET /api/packs` — All available packs
+- `GET /api/user/packs` — User's packs with is_active, is_unlocked
+- `GET /api/user/active-pack` — Active pack details
+- `GET /api/user/trial-status` — Trial state for current user
+- `POST /api/user/packs/{id}/activate` — Activate pack (checks age_gate, coming_soon)
+- `POST /api/user/packs/{id}/unlock` — Unlock pack (pre-payment integration)
+- `POST /api/user/packs/{id}/age-verify` — Confirm 18+ age gate
+- `POST /api/agentic-chat` — Chat with PAUL·E (trial-aware, tool-aware)
 
-### Previous Completions
-- [x] Chat interface with tool execution
-- [x] Task workflow with chaining
-- [x] Quality scoring & auto-retry
-- [x] Browser automation tools
-- [x] Permission system (backend enforced)
-- [x] Session-based chat continuity
+## Key DB Schema
+- **packs**: `{slug, name, tagline, icon, color, system_prompt, allowed_tools, is_free, price_usd, age_gate, coming_soon, sort_order}`
+- **user_packs**: `{user_id, pack_id, is_unlocked, is_active, is_trial, trial_actions_used, trial_max_actions, age_verified}`
+- **agent_memories**: `{agent_id, content, type, timestamp}`
+- **devin_tasks**: tasks collection (name is legacy)
+- **agentic_conversations**: chat history with pack_id context
 
-## Testing Status
-- **Backend**: 96% (23/24 tests)
-- **Frontend**: 100% verified
-- Test reports: `/app/test_reports/iteration_8.json`
+## Admin Credentials
+- Password: `forge_master_2025`
 
-## Credentials
-- **Admin Password**: `forge_master_2025`
-- **Header**: `X-Admin-Key: forge_master_2025`
+## P0 Backlog (Next Session)
+- [ ] Stripe integration for pack purchases
+- [ ] User authentication (JWT / Google OAuth) — currently single admin user
+- [ ] Deployment fix (recurring issue)
 
-## Recommended Next Steps
+## P1 Backlog
+- [ ] Innovator Pack full implementation (7-stage Novelty Engine)
+  - Prior art search (requires browser tools — MANDATORY)
+  - Adversarial scoring (score AFTER arguing against idea)
+  - Enforced: 2-3 ideation methods max, selected and exhausted
+- [ ] PAUL·E Pro Subscription (cross-pack memory, higher limits, early pack access)
+- [ ] Usage caps for free Coder tier (N msgs/day, "watch ad for credits" button)
 
-### P0 - Monetization (Revenue)
-1. **Stripe Integration** - Add payment processing for pack purchases
-   - Checkout flow for locked packs
-   - Webhook to unlock packs on payment success
-   - Already have placeholder in `/api/user/packs/{id}/unlock`
+## P2 / Future Backlog
+- [ ] Creator Pack (image/video generation — Gemini Nano Banana / GPT-image-1)
+- [ ] Referral system (credits for referrals)
+- [ ] Voice control (TTS/STT as premium feature)
+- [ ] Calendar access, notifications
+- [ ] Rewarded ads framework (watch ad → +N trial credits)
+- [ ] Pack-specific memory (agent_memories with pack_id)
+- [ ] Rename devin_tasks → paule_tasks
 
-### P1 - User Experience
-2. **Voice Control** - High user interest
-   - Push-to-talk button in chat
-   - Speech-to-text (input)
-   - Text-to-speech (PAUL·E responses)
-   - ElevenLabs or OpenAI TTS integration
-
-3. **Pack-Specific Memory** - Currently partially implemented
-   - Memories already have `pack_id` field
-   - Need to filter memory retrieval by active pack
-   - Foundation for premium "Shared Context"
-
-### P2 - Platform Features
-4. **User Authentication** - Currently admin-only
-   - User registration/login
-   - Multiple users with own pack ownership
-   - Google OAuth option
-
-5. **Device Control** 
-   - Notifications (alert user when task completes)
-   - Calendar integration
-   - Camera access (for Researcher pack)
-
-### Future/Backlog
-- Premium "Shared Context" (cross-pack memory subscription)
-- Custom pack creation by users
-- Dark/Light mode toggle
-- Deployment verification
-- Visual task chaining UI
+## Innovator Pack Design Notes
+Blueprint provided by user (novelty-engine-v2-SKILL.pdf):
+- 7-stage pipeline: Domain framing → Prior art → Absence diagnostic → Ideation → Scoring → Failure analysis → Validation roadmap
+- Key insight: Prior art BEFORE ideation (not after)
+- Absence diagnostic: maps gaps to 6 archetypes (Discovery Gap, Coordination Problem, etc.)
+- Scoring: (Novelty × Feasibility × Impact) / 100
+- Temporal novelty (half-life) — novelty is time-bound
+- Implementation requirement: web search tools MANDATORY, adversarial scoring BEFORE final score
+- Price: $9.99
 
 ## Known Issues
-- **Deployment**: Previously failing, needs verification
-- **User Trust**: Platform-level concern (acknowledged)
-
-## Technical Notes
-- Using Grok API for LLM functions
-- Playwright for browser automation
-- MongoDB for all data storage
-- Hot reload enabled for development
+- Deployment: recurring failure — investigate after next major feature set
+- User auth: single admin user only — need proper auth before public launch
