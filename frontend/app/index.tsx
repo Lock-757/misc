@@ -105,6 +105,16 @@ interface Pack {
   is_unlocked: boolean;
   is_active: boolean;
   allowed_tools: string[];
+  age_gate?: boolean;
+  coming_soon?: boolean;
+}
+
+interface TrialInfo {
+  is_trial: boolean;
+  actions_used: number;
+  max_actions: number;
+  actions_remaining: number;
+  trial_expired?: boolean;
 }
 
 const DEFAULT_PERMISSIONS: Permission[] = [
@@ -159,6 +169,11 @@ export default function DevinLabScreen() {
   const [packs, setPacks] = useState<Pack[]>([]);
   const [activePack, setActivePack] = useState<Pack | null>(null);
   const [packSwitching, setPackSwitching] = useState(false);
+  const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null);
+
+  // Age-gate modal
+  const [showAgeGateModal, setShowAgeGateModal] = useState(false);
+  const [pendingPackId, setPendingPackId] = useState<string | null>(null);
   
   // Modal state
   const [showChainModal, setShowChainModal] = useState(false);
@@ -232,12 +247,13 @@ export default function DevinLabScreen() {
       const paule = agentsRes.data?.find((a: any) => a.name?.toLowerCase().includes('paul') || a.name?.toLowerCase().includes('devin'));
       if (paule) setDevinId(paule.id);
       
-      const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes] = await Promise.all([
+      const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes, trialRes] = await Promise.all([
         axios.get(`${API_URL}/api/devin/tasks`, { headers }),
         axios.get(`${API_URL}/api/devin/runs`, { headers }),
-        devin ? axios.get(`${API_URL}/api/agents/${devin.id}/memories`, { headers }) : Promise.resolve({ data: [] }),
+        paule ? axios.get(`${API_URL}/api/agents/${paule.id}/memories`, { headers }) : Promise.resolve({ data: [] }),
         axios.get(`${API_URL}/api/user/packs`, { headers }),
         axios.get(`${API_URL}/api/user/active-pack`, { headers }),
+        axios.get(`${API_URL}/api/user/trial-status`, { headers }),
       ]);
       
       setTasks(tasksRes.data || []);
@@ -246,6 +262,9 @@ export default function DevinLabScreen() {
       setPacks(packsRes.data || []);
       if (activePackRes.data?.id) {
         setActivePack(activePackRes.data);
+      }
+      if (trialRes.data?.is_trial !== undefined) {
+        setTrialInfo(trialRes.data);
       }
     } catch (err) {
       console.log('Load error:', err);
@@ -259,10 +278,12 @@ export default function DevinLabScreen() {
     
     const pack = packs.find(p => p.id === packId);
     if (!pack) return;
+
+    // Block coming soon packs
+    if (pack.coming_soon) return;
     
-    // Check if pack is unlocked
+    // Auto-unlock if not owned (payment integration later)
     if (!pack.is_unlocked && !pack.is_free) {
-      // For now, auto-unlock (payment integration later)
       try {
         setPackSwitching(true);
         await axios.post(`${API_URL}/api/user/packs/${packId}/unlock`, {}, { headers: getHeaders() });
@@ -277,16 +298,41 @@ export default function DevinLabScreen() {
       setPackSwitching(true);
       await axios.post(`${API_URL}/api/user/packs/${packId}/activate`, {}, { headers: getHeaders() });
       
-      // Clear chat when switching packs (new context)
+      // Clear chat when switching packs
       setChatMessages([]);
       const nextChatSessionId = createChatSessionId();
       persistChatSessionId(nextChatSessionId);
       if (Platform.OS === 'web') localStorage.removeItem('devin_chat');
       
-      // Refresh data
+      await loadData();
+    } catch (err: any) {
+      if (err.response?.data?.detail === 'age_gate_required') {
+        setPendingPackId(packId);
+        setShowAgeGateModal(true);
+      } else {
+        console.log('Switch pack error:', err);
+      }
+    } finally {
+      setPackSwitching(false);
+    }
+  };
+
+  const confirmAgeGate = async () => {
+    if (!pendingPackId) return;
+    try {
+      setPackSwitching(true);
+      await axios.post(`${API_URL}/api/user/packs/${pendingPackId}/age-verify`, {}, { headers: getHeaders() });
+      await axios.post(`${API_URL}/api/user/packs/${pendingPackId}/activate`, {}, { headers: getHeaders() });
+      setShowAgeGateModal(false);
+      setPendingPackId(null);
+      setChatMessages([]);
+      const nextChatSessionId = createChatSessionId();
+      persistChatSessionId(nextChatSessionId);
+      if (Platform.OS === 'web') localStorage.removeItem('devin_chat');
       await loadData();
     } catch (err) {
-      console.log('Switch pack error:', err);
+      console.log('Age verify error:', err);
+      setShowAgeGateModal(false);
     } finally {
       setPackSwitching(false);
     }
@@ -323,6 +369,14 @@ export default function DevinLabScreen() {
 
       if (res.data.session_id && res.data.session_id !== activeSessionId) {
         persistChatSessionId(res.data.session_id);
+      }
+
+      // Update trial info from response
+      if (res.data.trial_info) {
+        setTrialInfo(res.data.trial_info);
+        if (res.data.trial_info.trial_expired) {
+          void loadData(); // Refresh packs to reflect downgrade
+        }
       }
 
       if (chatSessionIdRef.current !== activeSessionId) return;
@@ -564,6 +618,29 @@ export default function DevinLabScreen() {
           ) : activeTab === 'chat' ? (
             // ============ CHAT TAB ============
             <View testID="chat-tab-panel" style={styles.chatContainer}>
+              {/* Trial Banner */}
+              {trialInfo?.is_trial && (
+                <View testID="trial-banner" style={styles.trialBanner}>
+                  <Ionicons name="flash" size={14} color={C.warning} />
+                  <Text style={styles.trialBannerText}>
+                    Coder Pro Trial — {trialInfo.actions_remaining}/{trialInfo.max_actions} builds remaining
+                  </Text>
+                  <TouchableOpacity testID="upgrade-coder-pro-btn" onPress={() => setActiveTab('packs')}>
+                    <Text style={styles.trialUpgradeText}>Upgrade</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {trialInfo?.trial_expired && !trialInfo.is_trial && (
+                <View testID="trial-expired-banner" style={[styles.trialBanner, styles.trialExpiredBanner]}>
+                  <Ionicons name="lock-closed" size={14} color={C.danger} />
+                  <Text style={[styles.trialBannerText, { color: C.danger }]}>
+                    Trial ended. Switched to Coder (read-only).
+                  </Text>
+                  <TouchableOpacity testID="get-coder-pro-btn" onPress={() => setActiveTab('packs')}>
+                    <Text style={[styles.trialUpgradeText, { color: C.accent }]}>Get Coder Pro</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               {/* Chat Messages */}
               <ScrollView 
                 ref={chatScrollRef}
@@ -822,19 +899,31 @@ export default function DevinLabScreen() {
                     style={[
                       styles.packCard, 
                       pack.is_active && styles.packCardActive,
-                      { borderColor: pack.is_active ? pack.color : C.border }
+                      pack.coming_soon && styles.packCardComingSoon,
+                      { borderColor: pack.is_active ? pack.color : pack.coming_soon ? C.border : C.border }
                     ]}
-                    onPress={() => !pack.is_active && switchPack(pack.id)}
-                    disabled={pack.is_active || packSwitching}
+                    onPress={() => !pack.is_active && !pack.coming_soon && switchPack(pack.id)}
+                    disabled={pack.is_active || packSwitching || !!pack.coming_soon}
                   >
-                    <View style={[styles.packIconContainer, { backgroundColor: pack.color + '20' }]}>
-                      <Ionicons name={pack.icon as any} size={28} color={pack.color} />
+                    <View style={[styles.packIconContainer, { backgroundColor: pack.color + (pack.coming_soon ? '10' : '20') }]}>
+                      <Ionicons name={pack.icon as any} size={28} color={pack.coming_soon ? pack.color + '60' : pack.color} />
                     </View>
-                    <Text style={styles.packName}>{pack.name}</Text>
+                    <Text style={[styles.packName, pack.coming_soon && styles.packNameMuted]}>{pack.name}</Text>
                     <Text style={styles.packTagline} numberOfLines={1}>{pack.tagline}</Text>
                     
+                    {pack.age_gate && !pack.coming_soon && (
+                      <View style={styles.ageGateTag}>
+                        <Ionicons name="shield-checkmark" size={10} color={C.warning} />
+                        <Text style={styles.ageGateTagText}>18+</Text>
+                      </View>
+                    )}
+                    
                     <View style={styles.packFooter}>
-                      {pack.is_active ? (
+                      {pack.coming_soon ? (
+                        <View style={[styles.packBadge, styles.comingSoonBadge]}>
+                          <Text style={[styles.packBadgeText, { color: pack.color }]}>SOON</Text>
+                        </View>
+                      ) : pack.is_active ? (
                         <View style={[styles.packBadge, { backgroundColor: pack.color + '30', borderColor: pack.color }]}>
                           <Text style={[styles.packBadgeText, { color: pack.color }]}>ACTIVE</Text>
                         </View>
@@ -924,6 +1013,36 @@ export default function DevinLabScreen() {
               </ScrollView>
               <TouchableOpacity style={styles.modalClose} onPress={() => setShowToolResults(null)}>
                 <Text style={styles.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Age Gate Modal */}
+        <Modal visible={showAgeGateModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.ageGateModal}>
+              <View style={styles.ageGateModalIcon}>
+                <Ionicons name="shield-checkmark" size={32} color={C.warning} />
+              </View>
+              <Text style={styles.ageGateTitle}>Age Verification</Text>
+              <Text style={styles.ageGateBody}>
+                The Companion pack contains mature content intended for adults.{'\n\n'}
+                By continuing, you confirm that you are 18 years of age or older.
+              </Text>
+              <TouchableOpacity
+                testID="age-gate-confirm-btn"
+                style={styles.ageGateConfirmBtn}
+                onPress={confirmAgeGate}
+              >
+                <Text style={styles.ageGateConfirmText}>I am 18+ — Continue</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="age-gate-cancel-btn"
+                style={styles.ageGateCancelBtn}
+                onPress={() => { setShowAgeGateModal(false); setPendingPackId(null); }}
+              >
+                <Text style={styles.ageGateCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1083,16 +1202,37 @@ const styles = StyleSheet.create({
   packsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   packCard: { width: '47%', backgroundColor: C.card, borderRadius: 16, padding: 16, borderWidth: 2, borderColor: C.border },
   packCardActive: { backgroundColor: 'rgba(255,255,255,0.02)' },
+  packCardComingSoon: { opacity: 0.6 },
   packIconContainer: { width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   packName: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 4 },
+  packNameMuted: { color: C.muted },
   packTagline: { fontSize: 12, color: C.muted, marginBottom: 12 },
   packFooter: { flexDirection: 'row', alignItems: 'center' },
   packBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
   packBadgeText: { fontSize: 10, fontWeight: '700' },
+  comingSoonBadge: { backgroundColor: 'rgba(249,115,22,0.15)', borderColor: 'rgba(249,115,22,0.4)' },
+  ageGateTag: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 8 },
+  ageGateTagText: { fontSize: 10, color: C.warning, fontWeight: '600' },
   activePackInfo: { backgroundColor: C.card, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: C.border },
   activePackInfoTitle: { fontSize: 14, fontWeight: '700', color: C.text, marginBottom: 8 },
   activePackInfoDesc: { fontSize: 13, color: C.muted, lineHeight: 18, marginBottom: 8 },
   activePackInfoTools: { fontSize: 11, color: C.muted, fontStyle: 'italic' },
+
+  // Trial banner
+  trialBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245,158,11,0.12)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.25)', paddingHorizontal: 16, paddingVertical: 10 },
+  trialExpiredBanner: { backgroundColor: 'rgba(239,68,68,0.08)', borderBottomColor: 'rgba(239,68,68,0.2)' },
+  trialBannerText: { flex: 1, fontSize: 12, fontWeight: '600', color: C.warning },
+  trialUpgradeText: { fontSize: 12, fontWeight: '700', color: C.warning },
+
+  // Age Gate Modal
+  ageGateModal: { width: '100%', maxWidth: 380, backgroundColor: C.card, borderRadius: 20, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' },
+  ageGateModalIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(245,158,11,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  ageGateTitle: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 12 },
+  ageGateBody: { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  ageGateConfirmBtn: { width: '100%', backgroundColor: C.warning, borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 10 },
+  ageGateConfirmText: { color: '#000', fontSize: 14, fontWeight: '700' },
+  ageGateCancelBtn: { padding: 10 },
+  ageGateCancelText: { fontSize: 14, color: C.muted },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },

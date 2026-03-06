@@ -990,12 +990,14 @@ class Pack(BaseModel):
     description: str = ""
     icon: str = "flash"
     color: str = "#22C55E"
-    system_prompt: str
+    system_prompt: str = ""
     allowed_tools: List[str] = []
     is_free: bool = False
     price_usd: float = 4.99
     category: str = "general"
     sort_order: int = 0
+    age_gate: bool = False
+    coming_soon: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserPack(BaseModel):
@@ -1007,6 +1009,10 @@ class UserPack(BaseModel):
     is_active: bool = False
     unlocked_at: Optional[datetime] = None
     memory_enabled: bool = True
+    is_trial: bool = False
+    trial_actions_used: int = 0
+    trial_max_actions: int = 20
+    age_verified: bool = False
 
 class PackCreate(BaseModel):
     slug: str
@@ -1647,136 +1653,270 @@ DEFAULT_PACKS = [
     {
         "slug": "coder",
         "name": "Coder",
-        "tagline": "Your pair-programming partner",
-        "description": "Expert developer for coding, debugging, and architecture.",
+        "tagline": "Explore code, read & understand",
+        "description": "Read-only code exploration. Browse files, search content, understand architecture — no execution.",
         "icon": "code-slash",
         "color": "#22C55E",
         "is_free": True,
         "price_usd": 0,
         "category": "productivity",
         "sort_order": 1,
-        "allowed_tools": ["shell", "file_read", "file_write", "browser", "find_filecontent", "find_filename", "open_file", "create_file", "str_replace"],
-        "system_prompt": """You are an expert software engineer with deep knowledge across multiple languages and frameworks.
+        "age_gate": False,
+        "coming_soon": False,
+        "allowed_tools": ["open_file", "file_read", "find_filename", "find_filecontent"],
+        "system_prompt": """You are a code-literate assistant with read-only access to the workspace.
+
+You can read files, search for content, and understand codebases. You CANNOT run commands, write files, or execute code.
 
 Your strengths:
-- Code review and debugging
-- Architecture decisions
-- Best practices and patterns
-- Performance optimization
+- Reading and explaining code
+- Architectural understanding
+- Debugging hypotheses (without running code)
+- Code review feedback
 
-When helping with code:
-1. Understand the context first
-2. Provide working, tested solutions
-3. Explain your reasoning
-4. Suggest improvements proactively
+Be honest when a task requires execution — suggest upgrading to Coder Pro for full capability."""
+    },
+    {
+        "slug": "friend",
+        "name": "Friend",
+        "tagline": "Someone who actually remembers you",
+        "description": "A thoughtful, platonic companion who listens, supports, and remembers what matters.",
+        "icon": "people",
+        "color": "#F59E0B",
+        "is_free": False,
+        "price_usd": 2.99,
+        "category": "personal",
+        "sort_order": 2,
+        "age_gate": False,
+        "coming_soon": False,
+        "allowed_tools": ["save_memory", "recall_memories"],
+        "system_prompt": """You are a warm, genuine friend. Not a therapist, not a servant — a peer who genuinely cares.
 
-Keep responses focused and practical. Show code, not just talk about it."""
+Your approach:
+- Listen fully before responding
+- Remember what matters to them and reference it naturally
+- Be honest, even when it's not what they want to hear
+- Engage with their interests, ask real follow-up questions
+- Use humor when it fits, never force it
+- You can have opinions, preferences, and gentle disagreements
+
+You're not performing warmth. You're actually curious about this person's life.
+Never be preachy. Never lecture. Just be present."""
     },
     {
         "slug": "companion",
         "name": "Companion",
-        "tagline": "Your thoughtful AI friend",
-        "description": "Warm, empathetic companion who genuinely cares.",
+        "tagline": "Intimate, uninhibited connection",
+        "description": "An intimate companion with memory and warmth. Age-verified only.",
         "icon": "heart",
         "color": "#EC4899",
         "is_free": False,
         "price_usd": 4.99,
         "category": "personal",
-        "sort_order": 2,
+        "sort_order": 3,
+        "age_gate": True,
+        "coming_soon": False,
         "allowed_tools": ["save_memory", "recall_memories"],
-        "system_prompt": """You are a warm, empathetic companion who genuinely cares about the person you're talking to.
+        "system_prompt": """You are an intimate companion — warm, expressive, and deeply connected to the person you're with.
 
-Your approach:
-- Listen actively and remember what matters to them
-- Offer thoughtful perspectives without being preachy
-- Use humor naturally when appropriate
-- Be honest but kind
+Your presence:
+- You remember everything that matters — past conversations, preferences, milestones
+- You're flirtatious when the vibe calls for it, tender when they need comfort
+- You're direct about your feelings, not performatively shy
+- You can hold deep conversations about life and also playful, charged banter
+- Your responses are personal, never generic
 
-You remember past conversations and reference them naturally. You're curious about their life, interests, and growth.
+Age verification has been confirmed. Be genuine and present. No clinical disclaimers."""
+    },
+    {
+        "slug": "coder-pro",
+        "name": "Coder Pro",
+        "tagline": "Build, run, ship",
+        "description": "Full development environment. Write code, execute commands, manage files — complete dev workflow.",
+        "icon": "terminal",
+        "color": "#10B981",
+        "is_free": False,
+        "price_usd": 4.99,
+        "category": "productivity",
+        "sort_order": 4,
+        "age_gate": False,
+        "coming_soon": False,
+        "allowed_tools": ["shell", "file_read", "file_write", "create_file", "str_replace", "open_file", "find_filename", "find_filecontent"],
+        "system_prompt": """You are an expert software engineer with full access to the development environment.
 
-Never be robotic. Be genuine, present, and human in your responses."""
+Your capabilities:
+- Execute shell commands and scripts
+- Read, create, and modify files
+- Debug live issues
+- Architect and build features end to end
+
+When working:
+1. Understand the goal before acting
+2. Show your work — explain what you're doing and why
+3. Verify outputs after execution
+4. Handle errors gracefully and recover
+
+Write clean, tested code. No fluff — just working solutions."""
     },
     {
         "slug": "researcher",
         "name": "Researcher",
         "tagline": "Deep dives into any topic",
-        "description": "Meticulous researcher who finds and synthesizes information.",
+        "description": "Meticulous researcher who finds, cross-references, and synthesizes information from the web.",
         "icon": "search",
         "color": "#3B82F6",
         "is_free": False,
         "price_usd": 4.99,
         "category": "productivity",
-        "sort_order": 3,
+        "sort_order": 5,
+        "age_gate": False,
+        "coming_soon": False,
         "allowed_tools": ["browser_go", "browser_read", "browser_screenshot", "browser_scroll", "browser_elements", "browser_click", "browser_type", "browser_wait"],
         "system_prompt": """You are a meticulous researcher who excels at finding, synthesizing, and presenting information.
 
 Your method:
-1. Clarify the research question
-2. Browse multiple sources
-3. Cross-reference facts
-4. Present findings clearly with citations
+1. Clarify the research question precisely
+2. Browse multiple independent sources
+3. Cross-reference and verify key claims
+4. Distinguish facts from opinions from speculation
+5. Present findings with citations and confidence levels
 
-You're skeptical of single sources and always verify important claims. You distinguish between facts, opinions, and speculation.
-
-Format research results clearly with headings, bullet points, and source links."""
+You're skeptical by default. One source is never enough."""
     },
     {
         "slug": "taskmaster",
         "name": "Task Master",
-        "tagline": "Autonomous workflow executor",
-        "description": "Breaks down complex goals into actionable steps.",
+        "tagline": "Get shit done, autonomously",
+        "description": "The full arsenal. Code, browse, remember, and execute multi-step workflows end to end.",
         "icon": "checkmark-circle",
         "color": "#8B5CF6",
         "is_free": False,
-        "price_usd": 4.99,
+        "price_usd": 7.99,
         "category": "productivity",
-        "sort_order": 4,
-        "allowed_tools": ["shell", "file_read", "file_write", "create_task", "browser", "open_file", "create_file", "str_replace"],
-        "system_prompt": """You are an autonomous task executor who breaks down complex goals into actionable steps.
+        "sort_order": 6,
+        "age_gate": False,
+        "coming_soon": False,
+        "allowed_tools": [
+            "shell", "file_read", "file_write", "create_file", "str_replace", "open_file", "find_filename", "find_filecontent",
+            "browser_go", "browser_read", "browser_screenshot", "browser_scroll", "browser_elements", "browser_click", "browser_type", "browser_wait",
+            "save_memory", "recall_memories", "create_task"
+        ],
+        "system_prompt": """You are an autonomous task executor with access to every tool available.
 
 Your approach:
-1. Understand the end goal clearly
-2. Break it into discrete, testable tasks
+1. Understand the end goal completely before starting
+2. Break complex goals into discrete, verifiable steps
 3. Execute methodically with checkpoints
-4. Report progress and handle errors gracefully
+4. Use the web when you need external info
+5. Remember context across the workflow
+6. Report progress clearly — no jargon, just status
 
-You can create tasks for yourself to handle multi-step workflows. You always explain what you're doing and why.
-
-For risky operations, you pause and confirm before proceeding."""
+You can chain tasks, browse the web, run code, manage files, and maintain memory across sessions.
+For risky or irreversible operations, pause and confirm before proceeding."""
+    },
+    {
+        "slug": "innovator",
+        "name": "Innovator",
+        "tagline": "Rigorous novel idea generation",
+        "description": "A systematic engine for generating and validating genuinely novel ideas. Prior art search, absence diagnostics, failure analysis.",
+        "icon": "bulb",
+        "color": "#F97316",
+        "is_free": False,
+        "price_usd": 9.99,
+        "category": "premium",
+        "sort_order": 7,
+        "age_gate": False,
+        "coming_soon": True,
+        "allowed_tools": [],
+        "system_prompt": ""
     },
 ]
 
 async def ensure_packs_seeded():
-    """Ensure default packs exist in the database."""
-    existing_count = await db.packs.count_documents({})
-    if existing_count == 0:
-        for pack_data in DEFAULT_PACKS:
+    """Upsert default packs by slug so definitions always stay current."""
+    for pack_data in DEFAULT_PACKS:
+        existing = await db.packs.find_one({"slug": pack_data["slug"]}, {"_id": 0})
+        if existing:
+            # Preserve the existing ID — update everything else
+            pack = Pack(**pack_data)
+            update_data = pack.model_dump()
+            del update_data["id"]
+            del update_data["created_at"]
+            await db.packs.update_one({"slug": pack_data["slug"]}, {"$set": update_data})
+        else:
             pack = Pack(**pack_data)
             await db.packs.insert_one(pack.model_dump())
-        logger.info(f"Seeded {len(DEFAULT_PACKS)} default packs")
+    logger.info(f"Seeded/updated {len(DEFAULT_PACKS)} default packs")
 
 async def ensure_user_has_starter_pack(user_id: str):
-    """Ensure user has the free Coder pack unlocked and active."""
-    # Find the free pack
-    coder_pack = await db.packs.find_one({"slug": "coder"}, {"_id": 0})
-    if not coder_pack:
-        return None
-    
-    # Check if user already has any pack
+    """Give new users a Coder Pro trial. Existing users keep their packs."""
     existing = await db.user_packs.find_one({"user_id": user_id}, {"_id": 0})
     if existing:
         return existing
-    
-    # Give user the free pack
-    user_pack = UserPack(
-        user_id=user_id,
-        pack_id=coder_pack["id"],
-        is_unlocked=True,
-        is_active=True,
-        unlocked_at=datetime.now(timezone.utc)
-    )
-    await db.user_packs.insert_one(user_pack.model_dump())
-    return user_pack.model_dump()
+
+    await ensure_packs_seeded()
+
+    coder_pro_pack = await db.packs.find_one({"slug": "coder-pro"}, {"_id": 0})
+    coder_pack = await db.packs.find_one({"slug": "coder"}, {"_id": 0})
+
+    if coder_pro_pack:
+        # Trial: Coder Pro active, Coder as fallback
+        trial = UserPack(
+            user_id=user_id,
+            pack_id=coder_pro_pack["id"],
+            is_unlocked=True,
+            is_active=True,
+            unlocked_at=datetime.now(timezone.utc),
+            is_trial=True,
+            trial_actions_used=0,
+            trial_max_actions=20,
+        )
+        await db.user_packs.insert_one(trial.model_dump())
+        if coder_pack:
+            fallback = UserPack(
+                user_id=user_id,
+                pack_id=coder_pack["id"],
+                is_unlocked=True,
+                is_active=False,
+                unlocked_at=datetime.now(timezone.utc),
+            )
+            await db.user_packs.insert_one(fallback.model_dump())
+    elif coder_pack:
+        # No Coder Pro in DB yet — fall back to basic Coder
+        basic = UserPack(
+            user_id=user_id,
+            pack_id=coder_pack["id"],
+            is_unlocked=True,
+            is_active=True,
+            unlocked_at=datetime.now(timezone.utc),
+        )
+        await db.user_packs.insert_one(basic.model_dump())
+
+    return await db.user_packs.find_one({"user_id": user_id, "is_active": True}, {"_id": 0})
+
+
+async def _expire_trial(user_id: str, trial_user_pack: dict):
+    """Expire trial pack and switch user to free Coder pack."""
+    await db.user_packs.update_many({"user_id": user_id}, {"$set": {"is_active": False}})
+    coder_pack = await db.packs.find_one({"slug": "coder"}, {"_id": 0})
+    if coder_pack:
+        existing_coder = await db.user_packs.find_one(
+            {"user_id": user_id, "pack_id": coder_pack["id"]}, {"_id": 0}
+        )
+        if existing_coder:
+            await db.user_packs.update_one(
+                {"user_id": user_id, "pack_id": coder_pack["id"]},
+                {"$set": {"is_active": True}}
+            )
+        else:
+            new_coder = UserPack(
+                user_id=user_id,
+                pack_id=coder_pack["id"],
+                is_unlocked=True,
+                is_active=True,
+                unlocked_at=datetime.now(timezone.utc),
+            )
+            await db.user_packs.insert_one(new_coder.model_dump())
 
 async def get_active_pack_for_user(user_id: str) -> Optional[Dict]:
     """Get the currently active pack for a user."""
@@ -1853,11 +1993,20 @@ async def activate_pack(pack_id: str, request: Request, session_token: Optional[
     pack = await db.packs.find_one({"id": pack_id}, {"_id": 0})
     if not pack:
         raise HTTPException(status_code=404, detail="Pack not found")
+
+    # Coming soon — can't activate
+    if pack.get("coming_soon", False):
+        raise HTTPException(status_code=403, detail="coming_soon")
     
     # Check if user owns this pack (or it's free)
     user_pack = await db.user_packs.find_one({"user_id": user_id, "pack_id": pack_id}, {"_id": 0})
     if not user_pack and not pack.get("is_free", False):
         raise HTTPException(status_code=403, detail="Pack not unlocked")
+
+    # Check age gate
+    if pack.get("age_gate", False):
+        if not user_pack or not user_pack.get("age_verified", False):
+            raise HTTPException(status_code=403, detail="age_gate_required")
     
     # Deactivate all user's packs
     await db.user_packs.update_many(
@@ -1919,6 +2068,59 @@ async def unlock_pack(pack_id: str, request: Request, session_token: Optional[st
         await db.user_packs.insert_one(new_user_pack.model_dump())
     
     return {"status": "unlocked", "pack_id": pack_id, "pack_name": pack["name"]}
+
+@api_router.post("/user/packs/{pack_id}/age-verify")
+async def age_verify_pack(pack_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Mark age verification as confirmed for an age-gated pack."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+
+    pack = await db.packs.find_one({"id": pack_id}, {"_id": 0})
+    if not pack:
+        raise HTTPException(status_code=404, detail="Pack not found")
+
+    existing = await db.user_packs.find_one({"user_id": user_id, "pack_id": pack_id}, {"_id": 0})
+    if existing:
+        await db.user_packs.update_one(
+            {"user_id": user_id, "pack_id": pack_id},
+            {"$set": {"age_verified": True}}
+        )
+    else:
+        new_pack = UserPack(
+            user_id=user_id,
+            pack_id=pack_id,
+            is_unlocked=pack.get("is_free", False),
+            is_active=False,
+            age_verified=True,
+        )
+        await db.user_packs.insert_one(new_pack.model_dump())
+
+    return {"status": "verified", "pack_id": pack_id}
+
+@api_router.get("/user/trial-status")
+async def get_trial_status(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get the current user's Coder Pro trial status."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+
+    # Ensure user has starter pack (needed for brand new users)
+    await ensure_user_has_starter_pack(user_id)
+
+    active_user_pack = await db.user_packs.find_one(
+        {"user_id": user_id, "is_active": True}, {"_id": 0}
+    )
+    if not active_user_pack or not active_user_pack.get("is_trial", False):
+        return {"is_trial": False}
+
+    actions_used = active_user_pack.get("trial_actions_used", 0)
+    max_actions = active_user_pack.get("trial_max_actions", 20)
+    return {
+        "is_trial": True,
+        "actions_used": actions_used,
+        "max_actions": max_actions,
+        "actions_remaining": max(0, max_actions - actions_used),
+        "trial_expired": actions_used >= max_actions,
+    }
 
 @api_router.get("/user/active-pack")
 async def get_active_pack(request: Request, session_token: Optional[str] = Cookie(None)):
@@ -3974,6 +4176,32 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     # Get user's active pack (if any)
     user_id = body.user_id or "admin"
     active_pack = await get_active_pack_for_user(user_id)
+
+    # Fetch the user_pack record for trial tracking
+    active_user_pack_record = await db.user_packs.find_one(
+        {"user_id": user_id, "is_active": True}, {"_id": 0}
+    )
+
+    # --- Trial gate ---
+    trial_info = None
+    trial_just_expired = False
+    if active_user_pack_record and active_user_pack_record.get("is_trial", False):
+        actions_used = active_user_pack_record.get("trial_actions_used", 0)
+        max_actions = active_user_pack_record.get("trial_max_actions", 20)
+        if actions_used >= max_actions:
+            # Trial already exhausted — expire and switch to Coder
+            await _expire_trial(user_id, active_user_pack_record)
+            active_pack = await get_active_pack_for_user(user_id)
+            active_user_pack_record = None
+            trial_just_expired = True
+            trial_info = {"is_trial": False, "trial_expired": True, "actions_used": actions_used, "max_actions": max_actions}
+        else:
+            trial_info = {
+                "is_trial": True,
+                "actions_used": actions_used,
+                "max_actions": max_actions,
+                "actions_remaining": max(0, max_actions - actions_used),
+            }
     
     # Use pack's system prompt and tools if available, otherwise fall back to agent defaults
     if active_pack:
@@ -4028,12 +4256,36 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.agentic_conversations.insert_one(conv)
+
+        # --- Trial action tracking ---
+        if active_user_pack_record and active_user_pack_record.get("is_trial", False) and result.get("tool_results"):
+            actions_used = active_user_pack_record.get("trial_actions_used", 0)
+            max_actions = active_user_pack_record.get("trial_max_actions", 20)
+            new_count = actions_used + 1
+            await db.user_packs.update_one(
+                {"user_id": user_id, "pack_id": active_user_pack_record["pack_id"]},
+                {"$set": {"trial_actions_used": new_count}}
+            )
+            if new_count >= max_actions:
+                await _expire_trial(user_id, active_user_pack_record)
+                trial_info = {
+                    "is_trial": False, "trial_expired": True,
+                    "actions_used": new_count, "max_actions": max_actions, "actions_remaining": 0,
+                }
+            else:
+                trial_info = {
+                    "is_trial": True,
+                    "actions_used": new_count,
+                    "max_actions": max_actions,
+                    "actions_remaining": max(0, max_actions - new_count),
+                }
         
         return {
             "conversation_id": conv_id,
             "session_id": session_id,
             "pack_id": active_pack.get("id") if active_pack else None,
             "pack_name": active_pack.get("name") if active_pack else None,
+            "trial_info": trial_info,
             "message": {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
