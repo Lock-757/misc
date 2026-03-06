@@ -874,7 +874,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 AGENTIC_CHAT_HISTORY_LIMIT = 5
-DEVIN_CONVERSATION_STYLE_PROMPT = """
+PAULE_CONVERSATION_STYLE_PROMPT = """
 You are PAUL·E, a highly capable engineering agent talking to a real human.
 
 Conversation guidelines:
@@ -892,9 +892,9 @@ Conversation guidelines:
 def build_agentic_chat_system_prompt(agent: Dict[str, Any]) -> str:
     base_prompt = (agent.get("system_prompt") or "You are a helpful assistant.").strip()
     agent_name = (agent.get("name") or "").lower()
-    if "devin" not in agent_name:
+    if "devin" not in agent_name and "paul" not in agent_name:
         return base_prompt
-    return f"{base_prompt}\n\n{DEVIN_CONVERSATION_STYLE_PROMPT}"
+    return f"{base_prompt}\n\n{PAULE_CONVERSATION_STYLE_PROMPT}"
 
 
 def is_provider_moderation_error(error_text: str) -> bool:
@@ -1013,6 +1013,46 @@ class UserPack(BaseModel):
     trial_actions_used: int = 0
     trial_max_actions: int = 20
     age_verified: bool = False
+
+
+class UserCustomizationUpdate(BaseModel):
+    agent_name: str = "PAUL·E"
+    personality: str = "balanced"  # balanced | professional | casual | witty
+    tone: str = "warm"             # warm | neutral | direct | playful
+    response_length: str = "normal"  # concise | normal | detailed
+
+
+def build_customization_prefix(customization: dict) -> str:
+    """Build a system prompt prefix from user customization settings."""
+    name = customization.get("agent_name", "PAUL·E")
+    personality = customization.get("personality", "balanced")
+    tone = customization.get("tone", "warm")
+    length_pref = customization.get("response_length", "normal")
+
+    personality_map = {
+        "balanced": "balanced and adaptable",
+        "professional": "precise and professional, formal in phrasing",
+        "casual": "casual and approachable, like a good friend",
+        "witty": "witty with a dry sense of humor",
+    }
+    tone_map = {
+        "warm": "warm and engaging",
+        "neutral": "neutral and matter-of-fact",
+        "direct": "direct and concise, skip pleasantries",
+        "playful": "playful and energetic",
+    }
+    length_map = {
+        "concise": "Keep all responses brief and to the point — no padding.",
+        "normal": "Balance completeness with brevity.",
+        "detailed": "Provide thorough, detailed explanations when appropriate.",
+    }
+
+    return " ".join([
+        f"Your name in this conversation is {name}.",
+        f"Your personality style is {personality_map.get(personality, 'balanced and adaptable')}.",
+        f"Your communication tone is {tone_map.get(tone, 'warm and engaging')}.",
+        length_map.get(length_pref, "Balance completeness with brevity."),
+    ])
 
 class PackCreate(BaseModel):
     slug: str
@@ -2122,6 +2162,118 @@ async def get_trial_status(request: Request, session_token: Optional[str] = Cook
         "trial_expired": actions_used >= max_actions,
     }
 
+async def ensure_sensible_default_packs():
+    """Ensure no user is defaulted to an age-gated pack without global age verification."""
+    companion = await db.packs.find_one({"slug": "companion"}, {"_id": 0})
+    if not companion:
+        return
+
+    active_companion = await db.user_packs.find(
+        {"pack_id": companion["id"], "is_active": True}, {"_id": 0}
+    ).to_list(100)
+
+    for up in active_companion:
+        user_id = up["user_id"]
+        settings = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
+        if not settings or not settings.get("age_verified", False):
+            await db.user_packs.update_many({"user_id": user_id}, {"$set": {"is_active": False}})
+            fallback = (
+                await db.packs.find_one({"slug": "coder-pro"}, {"_id": 0}) or
+                await db.packs.find_one({"slug": "coder"}, {"_id": 0})
+            )
+            if fallback:
+                existing = await db.user_packs.find_one(
+                    {"user_id": user_id, "pack_id": fallback["id"]}, {"_id": 0}
+                )
+                if existing:
+                    await db.user_packs.update_one(
+                        {"user_id": user_id, "pack_id": fallback["id"]},
+                        {"$set": {"is_active": True}}
+                    )
+                else:
+                    new_pack = UserPack(
+                        user_id=user_id, pack_id=fallback["id"],
+                        is_unlocked=True, is_active=True,
+                        unlocked_at=datetime.now(timezone.utc)
+                    )
+                    await db.user_packs.insert_one(new_pack.model_dump())
+            logger.info(f"Migrated user {user_id} away from Companion (unverified)")
+
+@api_router.get("/user/settings")
+async def get_user_settings(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get current user's global settings."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    settings = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
+    return settings or {"user_id": user_id, "age_verified": False}
+
+@api_router.post("/user/settings/age-verify")
+async def settings_age_verify(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Globally verify user age — unlocks age-gated packs."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+
+    await db.user_settings.update_one(
+        {"user_id": user_id},
+        {"$set": {"age_verified": True, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    # Pre-verify companion user_pack
+    companion = await db.packs.find_one({"slug": "companion"}, {"_id": 0})
+    if companion:
+        existing = await db.user_packs.find_one({"user_id": user_id, "pack_id": companion["id"]}, {"_id": 0})
+        if existing:
+            await db.user_packs.update_one(
+                {"user_id": user_id, "pack_id": companion["id"]},
+                {"$set": {"age_verified": True}}
+            )
+        else:
+            new_up = UserPack(user_id=user_id, pack_id=companion["id"], age_verified=True)
+            await db.user_packs.insert_one(new_up.model_dump())
+
+    return {"status": "verified", "age_verified": True}
+
+@api_router.get("/user/customization")
+async def get_user_customization(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get current user's PAUL·E customization settings."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+    customization = await db.user_customizations.find_one({"user_id": user_id}, {"_id": 0})
+    return customization or {
+        "user_id": user_id, "agent_name": "PAUL·E",
+        "personality": "balanced", "tone": "warm", "response_length": "normal",
+    }
+
+@api_router.put("/user/customization")
+async def update_user_customization(
+    body: UserCustomizationUpdate,
+    request: Request,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Update user's PAUL·E customization (paid packs only)."""
+    user = await get_current_user(request, session_token)
+    user_id = user["user_id"] if user else "admin"
+
+    active_pack = await get_active_pack_for_user(user_id)
+    active_user_pack = await db.user_packs.find_one({"user_id": user_id, "is_active": True}, {"_id": 0})
+    is_paid_or_trial = active_pack and (
+        not active_pack.get("is_free", False) or
+        (active_user_pack and active_user_pack.get("is_trial", False))
+    )
+    if not is_paid_or_trial:
+        raise HTTPException(status_code=403, detail="customization_requires_paid_pack")
+
+    data = {
+        "user_id": user_id,
+        "agent_name": body.agent_name or "PAUL·E",
+        "personality": body.personality or "balanced",
+        "tone": body.tone or "warm",
+        "response_length": body.response_length or "normal",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.user_customizations.update_one({"user_id": user_id}, {"$set": data}, upsert=True)
+    return data
+
 @api_router.get("/user/active-pack")
 async def get_active_pack(request: Request, session_token: Optional[str] = Cookie(None)):
     """Get the currently active pack for the user."""
@@ -2179,6 +2331,9 @@ async def ensure_core_agents() -> None:
         devin_doc["status"] = "active"
         devin_doc["description"] = "Core tool-enabled engineering agent - PAUL·E"
         await db.agents.insert_one(devin_doc)
+
+    # Ensure no user is stuck on an age-gated pack without verification
+    await ensure_sensible_default_packs()
 
 @api_router.get("/agents", response_model=List[AgentConfig])
 async def get_agents(include_templates: bool = False):
@@ -4207,7 +4362,19 @@ async def agentic_chat(body: AgenticChatRequest, request: Request):
     if active_pack:
         # Merge pack prompt with conversational style
         pack_prompt = active_pack.get("system_prompt", "")
-        agent_prompt = f"{pack_prompt}\n\n{DEVIN_CONVERSATION_STYLE_PROMPT}"
+        agent_prompt = f"{pack_prompt}\n\n{PAULE_CONVERSATION_STYLE_PROMPT}"
+
+        # Apply user customization (paid packs only)
+        is_paid_or_trial = (
+            not active_pack.get("is_free", False) or
+            (active_user_pack_record and active_user_pack_record.get("is_trial", False))
+        )
+        if is_paid_or_trial:
+            user_customization = await db.user_customizations.find_one({"user_id": user_id}, {"_id": 0})
+            if user_customization:
+                custom_prefix = build_customization_prefix(user_customization)
+                agent_prompt = f"{custom_prefix}\n\n{agent_prompt}"
+
         pack_allowed_tools = active_pack.get("allowed_tools", None)
     else:
         agent_prompt = build_agentic_chat_system_prompt(agent)

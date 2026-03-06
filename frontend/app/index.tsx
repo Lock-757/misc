@@ -117,6 +117,18 @@ interface TrialInfo {
   trial_expired?: boolean;
 }
 
+interface UserSettings {
+  user_id?: string;
+  age_verified: boolean;
+}
+
+interface UserCustomization {
+  agent_name: string;
+  personality: string;
+  tone: string;
+  response_length: string;
+}
+
 const DEFAULT_PERMISSIONS: Permission[] = [
   { id: 'shell', name: 'Shell Commands', description: 'Execute terminal commands', enabled: true, requires_approval: false },
   { id: 'file_read', name: 'File Read', description: 'Read files in workspace', enabled: true, requires_approval: false },
@@ -163,7 +175,7 @@ export default function DevinLabScreen() {
   const [chainToTask, setChainToTask] = useState<string>('');
   
   // Tab state - Chat is now first/default
-  const [activeTab, setActiveTab] = useState<'chat' | 'create' | 'queue' | 'history' | 'packs' | 'memory' | 'permissions'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'create' | 'queue' | 'history' | 'packs' | 'memory' | 'permissions' | 'customize' | 'settings'>('chat');
   
   // Pack state
   const [packs, setPacks] = useState<Pack[]>([]);
@@ -174,6 +186,17 @@ export default function DevinLabScreen() {
   // Age-gate modal
   const [showAgeGateModal, setShowAgeGateModal] = useState(false);
   const [pendingPackId, setPendingPackId] = useState<string | null>(null);
+
+  // Settings state
+  const [userSettings, setUserSettings] = useState<UserSettings>({ age_verified: false });
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [showSettingsAgeModal, setShowSettingsAgeModal] = useState(false);
+
+  // Customize state
+  const [userCustomization, setUserCustomization] = useState<UserCustomization>({
+    agent_name: 'PAUL·E', personality: 'balanced', tone: 'warm', response_length: 'normal',
+  });
+  const [customizationSaving, setCustomizationSaving] = useState(false);
   
   // Modal state
   const [showChainModal, setShowChainModal] = useState(false);
@@ -247,13 +270,15 @@ export default function DevinLabScreen() {
       const paule = agentsRes.data?.find((a: any) => a.name?.toLowerCase().includes('paul') || a.name?.toLowerCase().includes('devin'));
       if (paule) setDevinId(paule.id);
       
-      const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes, trialRes] = await Promise.all([
+      const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes, trialRes, settingsRes, customizationRes] = await Promise.all([
         axios.get(`${API_URL}/api/devin/tasks`, { headers }),
         axios.get(`${API_URL}/api/devin/runs`, { headers }),
         paule ? axios.get(`${API_URL}/api/agents/${paule.id}/memories`, { headers }) : Promise.resolve({ data: [] }),
         axios.get(`${API_URL}/api/user/packs`, { headers }),
         axios.get(`${API_URL}/api/user/active-pack`, { headers }),
         axios.get(`${API_URL}/api/user/trial-status`, { headers }),
+        axios.get(`${API_URL}/api/user/settings`, { headers }),
+        axios.get(`${API_URL}/api/user/customization`, { headers }),
       ]);
       
       setTasks(tasksRes.data || []);
@@ -265,6 +290,12 @@ export default function DevinLabScreen() {
       }
       if (trialRes.data?.is_trial !== undefined) {
         setTrialInfo(trialRes.data);
+      }
+      if (settingsRes.data) {
+        setUserSettings(settingsRes.data);
+      }
+      if (customizationRes.data) {
+        setUserCustomization(customizationRes.data);
       }
     } catch (err) {
       console.log('Load error:', err);
@@ -335,6 +366,31 @@ export default function DevinLabScreen() {
       setShowAgeGateModal(false);
     } finally {
       setPackSwitching(false);
+    }
+  };
+
+  const handleSettingsAgeVerify = async () => {
+    try {
+      await axios.post(`${API_URL}/api/user/settings/age-verify`, {}, { headers: getHeaders() });
+      setUserSettings({ ...userSettings, age_verified: true });
+      setShowSettingsAgeModal(false);
+      await loadData(); // Refresh to include Companion in packs
+    } catch (err) {
+      console.log('Settings age verify error:', err);
+      setShowSettingsAgeModal(false);
+    }
+  };
+
+  const saveCustomization = async () => {
+    if (customizationSaving) return;
+    setCustomizationSaving(true);
+    try {
+      const res = await axios.put(`${API_URL}/api/user/customization`, userCustomization, { headers: getHeaders() });
+      setUserCustomization(res.data);
+    } catch (err) {
+      console.log('Save customization error:', err);
+    } finally {
+      setCustomizationSaving(false);
     }
   };
 
@@ -592,11 +648,12 @@ export default function DevinLabScreen() {
             {[
               { key: 'chat', icon: 'chatbubbles', label: 'Chat' },
               { key: 'packs', icon: 'apps', label: 'Packs' },
+              { key: 'customize', icon: 'color-wand', label: 'Customize' },
               { key: 'create', icon: 'add-circle', label: 'Task' },
               { key: 'queue', icon: 'list', label: `Queue (${tasks.length})` },
               { key: 'history', icon: 'time', label: 'History' },
               { key: 'memory', icon: 'albums', label: `Memory` },
-              { key: 'permissions', icon: 'shield-checkmark', label: 'Perms' },
+              { key: 'settings', icon: 'settings-sharp', label: 'Settings' },
             ].map((tab) => (
               <TouchableOpacity
                 key={tab.key}
@@ -703,7 +760,7 @@ export default function DevinLabScreen() {
                       <LinearGradient colors={[C.accent, '#16A34A']} style={styles.chatAvatar}>
                         <Ionicons name="flash" size={12} color="#fff" />
                       </LinearGradient>
-                      <Text style={styles.chatBubbleName}>Devin</Text>
+                      <Text style={styles.chatBubbleName}>PAUL·E</Text>
                     </View>
                     <View style={styles.typingIndicator}>
                       <View style={[styles.typingDot, { animationDelay: '0ms' }]} />
@@ -892,7 +949,9 @@ export default function DevinLabScreen() {
               )}
               
               <View style={styles.packsGrid}>
-                {packs.map((pack) => (
+                {packs
+                  .filter(pack => !pack.age_gate || userSettings.age_verified)
+                  .map((pack) => (
                   <TouchableOpacity 
                     key={pack.id}
                     testID={`pack-card-${pack.slug}`}
@@ -913,8 +972,7 @@ export default function DevinLabScreen() {
                     
                     {pack.age_gate && !pack.coming_soon && (
                       <View style={styles.ageGateTag}>
-                        <Ionicons name="shield-checkmark" size={10} color={C.warning} />
-                        <Text style={styles.ageGateTagText}>18+</Text>
+                        <Ionicons name="shield-checkmark" size={10} color="transparent" />
                       </View>
                     )}
                     
@@ -951,8 +1009,164 @@ export default function DevinLabScreen() {
                 </View>
               )}
             </ScrollView>
+          ) : activeTab === 'customize' ? (
+            // ============ CUSTOMIZE TAB ============
+            (() => {
+              const isPaidOrTrial = activePack && (!activePack.is_free || trialInfo?.is_trial);
+              return (
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.sectionTitle}>Personalize PAUL·E</Text>
+                  {!isPaidOrTrial ? (
+                    <View style={styles.customizeLock}>
+                      <View style={styles.customizeLockIcon}>
+                        <Ionicons name="lock-closed" size={28} color={C.muted} />
+                      </View>
+                      <Text style={styles.customizeLockTitle}>Personalization is a paid feature</Text>
+                      <Text style={styles.customizeLockText}>
+                        Upgrade to any paid pack to customize PAUL·E's name, personality, and response style.
+                      </Text>
+                      <TouchableOpacity testID="customize-view-packs-btn" style={styles.customizeLockBtn} onPress={() => setActiveTab('packs')}>
+                        <Text style={styles.customizeLockBtnText}>View Packs</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.settingsCard}>
+                        <Text style={styles.customizeLabel}>Agent Name</Text>
+                        <TextInput
+                          testID="customize-agent-name-input"
+                          style={styles.customizeInput}
+                          value={userCustomization.agent_name}
+                          onChangeText={(v) => setUserCustomization({ ...userCustomization, agent_name: v })}
+                          placeholder="PAUL·E"
+                          placeholderTextColor={C.muted}
+                          maxLength={24}
+                        />
+                      </View>
+
+                      <Text style={styles.sectionTitle}>Personality</Text>
+                      <View style={styles.presetGrid}>
+                        {(['balanced', 'professional', 'casual', 'witty'] as const).map(p => (
+                          <TouchableOpacity
+                            key={p} testID={`personality-${p}`}
+                            style={[styles.presetBtn, userCustomization.personality === p && styles.presetBtnActive]}
+                            onPress={() => setUserCustomization({ ...userCustomization, personality: p })}
+                          >
+                            <Text style={[styles.presetBtnText, userCustomization.personality === p && styles.presetBtnTextActive]}>
+                              {p.charAt(0).toUpperCase() + p.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <Text style={styles.sectionTitle}>Tone</Text>
+                      <View style={styles.presetGrid}>
+                        {(['warm', 'neutral', 'direct', 'playful'] as const).map(t => (
+                          <TouchableOpacity
+                            key={t} testID={`tone-${t}`}
+                            style={[styles.presetBtn, userCustomization.tone === t && styles.presetBtnActive]}
+                            onPress={() => setUserCustomization({ ...userCustomization, tone: t })}
+                          >
+                            <Text style={[styles.presetBtnText, userCustomization.tone === t && styles.presetBtnTextActive]}>
+                              {t.charAt(0).toUpperCase() + t.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <Text style={styles.sectionTitle}>Response Length</Text>
+                      <View style={styles.presetGrid}>
+                        {(['concise', 'normal', 'detailed'] as const).map(l => (
+                          <TouchableOpacity
+                            key={l} testID={`length-${l}`}
+                            style={[styles.presetBtn, userCustomization.response_length === l && styles.presetBtnActive]}
+                            onPress={() => setUserCustomization({ ...userCustomization, response_length: l })}
+                          >
+                            <Text style={[styles.presetBtnText, userCustomization.response_length === l && styles.presetBtnTextActive]}>
+                              {l.charAt(0).toUpperCase() + l.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <TouchableOpacity
+                        testID="save-customization-btn"
+                        style={[styles.saveCustomizationBtn, customizationSaving && { opacity: 0.7 }]}
+                        onPress={saveCustomization}
+                        disabled={customizationSaving}
+                      >
+                        <Text style={styles.saveCustomizationBtnText}>
+                          {customizationSaving ? 'Saving...' : 'Save Changes'}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </ScrollView>
+              );
+            })()
+          ) : activeTab === 'settings' ? (
+            // ============ SETTINGS TAB ============
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.sectionTitle}>Settings</Text>
+
+              {/* Profile */}
+              <View style={styles.settingsCard}>
+                <View style={styles.settingsRow}>
+                  <Ionicons name="person-circle" size={20} color={C.accent} />
+                  <View style={styles.settingsRowInfo}>
+                    <Text style={styles.settingsRowLabel}>Instance</Text>
+                    <Text style={styles.settingsRowValue}>Admin</Text>
+                  </View>
+                </View>
+                <View style={styles.settingsDivider} />
+                <View style={styles.settingsRow}>
+                  <Ionicons name="flash" size={20} color={activePack?.color || C.accent} />
+                  <View style={styles.settingsRowInfo}>
+                    <Text style={styles.settingsRowLabel}>Active Pack</Text>
+                    <Text style={styles.settingsRowValue}>{activePack?.name || 'None'}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Advanced Settings */}
+              <TouchableOpacity
+                testID="advanced-settings-toggle"
+                style={styles.advancedToggle}
+                onPress={() => setShowAdvancedSettings(!showAdvancedSettings)}
+              >
+                <Text style={styles.advancedToggleText}>Advanced Settings</Text>
+                <Ionicons name={showAdvancedSettings ? 'chevron-up' : 'chevron-down'} size={16} color={C.muted} />
+              </TouchableOpacity>
+
+              {showAdvancedSettings && (
+                <View style={styles.settingsCard}>
+                  {userSettings.age_verified ? (
+                    <View style={styles.settingsRow}>
+                      <Ionicons name="checkmark-circle" size={20} color={C.success} />
+                      <View style={styles.settingsRowInfo}>
+                        <Text style={styles.settingsRowLabel}>Mature content</Text>
+                        <Text style={[styles.settingsRowValue, { color: C.success }]}>Enabled</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      testID="age-verify-settings-btn"
+                      style={styles.settingsRow}
+                      onPress={() => setShowSettingsAgeModal(true)}
+                    >
+                      <Ionicons name="lock-closed" size={20} color={C.muted} />
+                      <View style={styles.settingsRowInfo}>
+                        <Text style={styles.settingsRowLabel}>Enable mature content</Text>
+                        <Text style={styles.settingsRowSubtext}>(unlocks a new pack)</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={C.muted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </ScrollView>
           ) : (
-            // ============ PERMISSIONS TAB ============
+            // ============ PERMISSIONS TAB (fallback) ============
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.sectionTitle}>Permissions</Text>
               <Text style={styles.sectionSubtitle}>Control what PAUL·E can do</Text>
@@ -1018,7 +1232,37 @@ export default function DevinLabScreen() {
           </View>
         </Modal>
 
-        {/* Age Gate Modal */}
+        {/* Settings Age Verification Modal */}
+        <Modal visible={showSettingsAgeModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.ageGateModal}>
+              <View style={styles.ageGateModalIcon}>
+                <Ionicons name="shield-checkmark" size={32} color={C.muted} />
+              </View>
+              <Text style={styles.ageGateTitle}>Age Verification</Text>
+              <Text style={styles.ageGateBody}>
+                Some features are restricted to users 18 and older.{'\n\n'}
+                By continuing, you confirm you are at least 18 years of age.
+              </Text>
+              <TouchableOpacity
+                testID="settings-age-verify-confirm-btn"
+                style={styles.ageGateConfirmBtn}
+                onPress={handleSettingsAgeVerify}
+              >
+                <Text style={styles.ageGateConfirmText}>I confirm I am 18+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="settings-age-verify-cancel-btn"
+                style={styles.ageGateCancelBtn}
+                onPress={() => setShowSettingsAgeModal(false)}
+              >
+                <Text style={styles.ageGateCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Age Gate Modal (from Packs tab) */}
         <Modal visible={showAgeGateModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.ageGateModal}>
@@ -1218,7 +1462,33 @@ const styles = StyleSheet.create({
   activePackInfoDesc: { fontSize: 13, color: C.muted, lineHeight: 18, marginBottom: 8 },
   activePackInfoTools: { fontSize: 11, color: C.muted, fontStyle: 'italic' },
 
-  // Trial banner
+  // Settings & Advanced
+  settingsCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, marginBottom: 16, overflow: 'hidden' },
+  settingsRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  settingsRowInfo: { flex: 1 },
+  settingsRowLabel: { fontSize: 15, color: C.text, fontWeight: '500' },
+  settingsRowValue: { fontSize: 13, color: C.muted, marginTop: 2 },
+  settingsRowSubtext: { fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 1 },
+  settingsDivider: { height: 1, backgroundColor: C.border, marginHorizontal: 16 },
+  advancedToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, marginBottom: 8 },
+  advancedToggleText: { fontSize: 14, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 1 },
+
+  // Customize
+  customizeLock: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24, gap: 12 },
+  customizeLockIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  customizeLockTitle: { fontSize: 18, fontWeight: '700', color: C.text, textAlign: 'center' },
+  customizeLockText: { fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20 },
+  customizeLockBtn: { marginTop: 8, backgroundColor: C.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  customizeLockBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  customizeLabel: { fontSize: 13, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  customizeInput: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: C.text },
+  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  presetBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.card },
+  presetBtnActive: { borderColor: C.accent, backgroundColor: C.accent + '20' },
+  presetBtnText: { fontSize: 14, color: C.muted },
+  presetBtnTextActive: { color: C.accent, fontWeight: '600' },
+  saveCustomizationBtn: { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 8, marginBottom: 24 },
+  saveCustomizationBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   trialBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245,158,11,0.12)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.25)', paddingHorizontal: 16, paddingVertical: 10 },
   trialExpiredBanner: { backgroundColor: 'rgba(239,68,68,0.08)', borderBottomColor: 'rgba(239,68,68,0.2)' },
   trialBannerText: { flex: 1, fontSize: 12, fontWeight: '600', color: C.warning },
