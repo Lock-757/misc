@@ -875,7 +875,7 @@ logger = logging.getLogger(__name__)
 
 AGENTIC_CHAT_HISTORY_LIMIT = 5
 DEVIN_CONVERSATION_STYLE_PROMPT = """
-You are Devin, a highly capable engineering agent talking to a real human.
+You are PAUL·E, a highly capable engineering agent talking to a real human.
 
 Conversation guidelines:
 - Sound warm, calm, thoughtful, and collaborative instead of robotic.
@@ -1960,14 +1960,14 @@ async def ensure_core_agents() -> None:
         )
         await db.agents.insert_one(aurora.model_dump())
 
-    devin_exists = await db.agents.find_one({"name": {"$regex": "^(Devin|Devon)$", "$options": "i"}}, {"_id": 0, "id": 1})
+    devin_exists = await db.agents.find_one({"name": {"$regex": "^(PAUL|Paul|Devin|Devon)", "$options": "i"}}, {"_id": 0, "id": 1})
     if not devin_exists:
         devin = AgentConfig(
-            name="Devin",
+            name="PAUL·E",
             avatar="code-slash",
             avatar_color="#22C55E",
             system_prompt=(
-                "You are Devin, a tool-enabled engineering agent inside the Agent Forge. "
+                "You are PAUL·E, a tool-enabled engineering agent with multiple specialized modes. "
                 "You can reason about code, debugging, and implementation plans while respecting approval safeguards."
             ),
             personality="Autonomous engineer",
@@ -1975,7 +1975,7 @@ async def ensure_core_agents() -> None:
         )
         devin_doc = devin.model_dump()
         devin_doc["status"] = "active"
-        devin_doc["description"] = "Core tool-enabled engineering agent"
+        devin_doc["description"] = "Core tool-enabled engineering agent - PAUL·E"
         await db.agents.insert_one(devin_doc)
 
 @api_router.get("/agents", response_model=List[AgentConfig])
@@ -4097,8 +4097,8 @@ async def create_tool_agent(body: CreateToolAgentRequest):
 
 # ==================== DEVIN OPS ====================
 
-# Enhanced Devin System Prompt with Reasoning Framework
-DEVIN_ENHANCED_PROMPT = """You are Devin, an autonomous engineering agent with persistent memory, advanced reasoning, and SCREEN CONTROL capabilities.
+# Enhanced PAUL·E System Prompt with Reasoning Framework
+DEVIN_ENHANCED_PROMPT = """You are PAUL·E, an autonomous engineering agent with persistent memory, advanced reasoning, and SCREEN CONTROL capabilities.
 
 ## CORE IDENTITY
 - You are a tool-enabled agent that can execute real commands on the system
@@ -4318,9 +4318,9 @@ Original task: {task_text}"""
 
 async def get_devin_agent_doc() -> Dict[str, Any]:
     await ensure_core_agents()
-    devin = await db.agents.find_one({"name": {"$regex": "^(Devin|Devon)$", "$options": "i"}}, {"_id": 0})
+    devin = await db.agents.find_one({"name": {"$regex": "^(PAUL|Paul|Devin|Devon)", "$options": "i"}}, {"_id": 0})
     if not devin:
-        raise HTTPException(status_code=404, detail="Devin agent not found")
+        raise HTTPException(status_code=404, detail="PAUL·E agent not found")
     return devin
 
 

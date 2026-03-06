@@ -229,8 +229,8 @@ export default function DevinLabScreen() {
       const headers = getHeaders();
       
       const agentsRes = await axios.get(`${API_URL}/api/agents`, { headers });
-      const devin = agentsRes.data?.find((a: any) => a.name?.toLowerCase().includes('devin'));
-      if (devin) setDevinId(devin.id);
+      const paule = agentsRes.data?.find((a: any) => a.name?.toLowerCase().includes('paul') || a.name?.toLowerCase().includes('devin'));
+      if (paule) setDevinId(paule.id);
       
       const [tasksRes, runsRes, memoriesRes, packsRes, activePackRes] = await Promise.all([
         axios.get(`${API_URL}/api/devin/tasks`, { headers }),
@@ -485,7 +485,7 @@ export default function DevinLabScreen() {
             <LinearGradient colors={[C.accent, '#16A34A']} style={styles.logoGradient}>
               <Ionicons name="flash" size={40} color="#fff" />
             </LinearGradient>
-            <Text style={styles.authTitle}>Devin Lab</Text>
+            <Text style={styles.authTitle}>PAUL·E</Text>
             <Text style={styles.authSubtitle}>Admin Access Required</Text>
             <TextInput
               testID="admin-password-input"
@@ -518,7 +518,7 @@ export default function DevinLabScreen() {
               <Ionicons name={(activePack?.icon || 'flash') as any} size={20} color="#fff" />
             </LinearGradient>
             <View>
-              <Text style={styles.headerTitle}>{activePack?.name || 'Agent'}</Text>
+              <Text style={styles.headerTitle}>{activePack?.name || 'PAUL·E'}</Text>
               {activePack && <Text style={styles.headerPackLabel}>Active Pack</Text>}
             </View>
           </View>
@@ -578,9 +578,9 @@ export default function DevinLabScreen() {
                     <LinearGradient colors={[C.accent, '#16A34A']} style={styles.chatEmptyIcon}>
                       <Ionicons name="chatbubbles" size={32} color="#fff" />
                     </LinearGradient>
-                    <Text style={styles.chatEmptyTitle}>Chat with Devin</Text>
+                    <Text style={styles.chatEmptyTitle}>Chat with PAUL·E</Text>
                     <Text style={styles.chatEmptyText}>
-                      Ask anything. Devin can browse the web, run commands, modify files, and remember everything.
+                      Ask anything. PAUL·E can browse the web, run commands, modify files, and remember everything.
                     </Text>
                     <View style={styles.chatSuggestions}>
                       {['What can you do?', 'Check disk space', 'Screenshot google.com'].map((s, i) => (
@@ -598,7 +598,7 @@ export default function DevinLabScreen() {
                           <LinearGradient colors={[C.accent, '#16A34A']} style={styles.chatAvatar}>
                             <Ionicons name="flash" size={12} color="#fff" />
                           </LinearGradient>
-                          <Text style={styles.chatBubbleName}>Devin</Text>
+                          <Text style={styles.chatBubbleName}>PAUL·E</Text>
                           {msg.toolResults && msg.toolResults.length > 0 && (
                             <TouchableOpacity 
                               testID={`chat-tool-results-button-${msg.id}`}
@@ -647,7 +647,7 @@ export default function DevinLabScreen() {
                 <TextInput
                   testID="chat-message-input"
                   style={styles.chatInput}
-                  placeholder="Message Devin..."
+                  placeholder="Message PAUL·E..."
                   placeholderTextColor={C.muted}
                   value={chatInput}
                   onChangeText={setChatInput}
@@ -779,7 +779,7 @@ export default function DevinLabScreen() {
           ) : activeTab === 'memory' ? (
             // ============ MEMORY TAB ============
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.sectionTitle}>Devin's Memory ({memories.length})</Text>
+              <Text style={styles.sectionTitle}>PAUL·E Memory ({memories.length})</Text>
               {memories.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="albums-outline" size={48} color={C.muted} />
@@ -866,7 +866,7 @@ export default function DevinLabScreen() {
             // ============ PERMISSIONS TAB ============
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.sectionTitle}>Permissions</Text>
-              <Text style={styles.sectionSubtitle}>Control what Devin can do</Text>
+              <Text style={styles.sectionSubtitle}>Control what PAUL·E can do</Text>
               {permissions.map((perm) => (
                 <View key={perm.id} style={styles.permCard}>
                   <View style={styles.permInfo}>
