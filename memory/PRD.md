@@ -72,7 +72,14 @@ Build a monetizable, customizable AI agent platform named "PAUL·E". Core idea: 
 ## Admin Credentials
 - Password: `forge_master_2025`
 
-## P0 Backlog (Next Session)
+### Session 3 (March 2026) — Devin Erasure + Settings + Customize
+- **"Devin" fully removed**: Typing indicator now shows "PAUL·E", agent name check updated, conversation style prompt renamed
+- **Default pack fixed**: `ensure_sensible_default_packs()` migration auto-corrects any user stuck on Companion without age verification → switches to Coder Pro/Coder at startup
+- **Companion buried properly**: Hidden from Packs grid unless globally age-verified. No 18+ badge.
+- **Settings tab**: Instance + Active Pack info, "Advanced Settings" collapsible section with age verification ("Enable mature content — unlocks a new pack")
+- **Customize tab**: Name / Personality (balanced|professional|casual|witty) / Tone (warm|neutral|direct|playful) / Response Length — locked for free Coder users, available on trial or paid
+- **Customization in agentic_chat**: User's name/personality/tone/length preferences are prepended to the system prompt for paid/trial users
+- **New endpoints**: `GET/POST /api/user/settings`, `GET/PUT /api/user/customization`, `POST /api/user/settings/age-verify`
 - [ ] Stripe integration for pack purchases
 - [ ] User authentication (JWT / Google OAuth) — currently single admin user
 - [ ] Deployment fix (recurring issue)
