@@ -150,6 +150,8 @@ export default function DevinLabScreen() {
   
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+  const [guestId, setGuestId] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
@@ -204,9 +206,21 @@ export default function DevinLabScreen() {
 
   useEffect(() => {
     if (Platform.OS === 'web') {
+      // Check admin auth
       const stored = localStorage.getItem('devin_admin');
-      if (stored === 'true') setIsAuthenticated(true);
-      
+      if (stored === 'true') {
+        setIsAuthenticated(true);
+        setIsGuest(false);
+      }
+
+      // Check guest session — auto-login if UUID exists
+      const storedGuest = localStorage.getItem('paule_guest_id');
+      if (storedGuest && stored !== 'true') {
+        setGuestId(storedGuest);
+        setIsGuest(true);
+        setIsAuthenticated(true);
+      }
+
       const savedPerms = localStorage.getItem('devin_permissions');
       if (savedPerms) setPermissions(JSON.parse(savedPerms));
       
@@ -240,6 +254,7 @@ export default function DevinLabScreen() {
   const handleAuth = () => {
     if (password === ADMIN_SECRET) {
       setIsAuthenticated(true);
+      setIsGuest(false);
       setAuthError('');
       if (Platform.OS === 'web') localStorage.setItem('devin_admin', 'true');
     } else {
@@ -247,13 +262,36 @@ export default function DevinLabScreen() {
     }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setPassword('');
-    if (Platform.OS === 'web') localStorage.removeItem('devin_admin');
+  const handleGuestLogin = () => {
+    let id = Platform.OS === 'web' ? localStorage.getItem('paule_guest_id') : null;
+    if (!id) {
+      id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      if (Platform.OS === 'web') localStorage.setItem('paule_guest_id', id);
+    }
+    setGuestId(id);
+    setIsGuest(true);
+    setIsAuthenticated(true);
   };
 
-  const getHeaders = () => ({ 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_SECRET });
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setIsGuest(false);
+    setGuestId('');
+    setPassword('');
+    if (Platform.OS === 'web') {
+      localStorage.removeItem('devin_admin');
+      localStorage.removeItem('paule_guest_id');
+      localStorage.removeItem('devin_chat');
+      localStorage.removeItem('devin_chat_session_id');
+    }
+  };
+
+  const getHeaders = () => {
+    if (isGuest && guestId) {
+      return { 'Content-Type': 'application/json', 'X-Guest-Id': guestId };
+    }
+    return { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_SECRET };
+  };
 
   const persistChatSessionId = (nextSessionId: string) => {
     chatSessionIdRef.current = nextSessionId;
@@ -596,11 +634,28 @@ export default function DevinLabScreen() {
               <Ionicons name="flash" size={40} color="#fff" />
             </LinearGradient>
             <Text style={styles.authTitle}>PAUL·E</Text>
-            <Text style={styles.authSubtitle}>Admin Access Required</Text>
+            <Text style={styles.authSubtitle}>Your intelligent agent platform</Text>
+
+            {/* Beta / no-login entry */}
+            <TouchableOpacity
+              testID="beta-login-button"
+              style={styles.betaButton}
+              onPress={handleGuestLogin}
+            >
+              <Ionicons name="flash-outline" size={18} color={C.accent} />
+              <Text style={styles.betaButtonText}>Try Beta — no account needed</Text>
+            </TouchableOpacity>
+
+            <View style={styles.authDivider}>
+              <View style={styles.authDividerLine} />
+              <Text style={styles.authDividerText}>or sign in</Text>
+              <View style={styles.authDividerLine} />
+            </View>
+
             <TextInput
               testID="admin-password-input"
               style={styles.authInput}
-              placeholder="Enter admin password"
+              placeholder="Admin password"
               placeholderTextColor={C.muted}
               value={password}
               onChangeText={setPassword}
@@ -633,6 +688,11 @@ export default function DevinLabScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
+            {isGuest && (
+              <View testID="beta-badge" style={styles.betaBadge}>
+                <Text style={styles.betaBadgeText}>BETA</Text>
+              </View>
+            )}
             <TouchableOpacity testID="refresh-data-button" onPress={() => void loadData()} style={styles.headerBtn}>
               <Ionicons name="refresh" size={20} color={activePack?.color || C.accent} />
             </TouchableOpacity>
@@ -1140,7 +1200,7 @@ export default function DevinLabScreen() {
 
               {showAdvancedSettings && (
                 <View style={styles.settingsCard}>
-                  {userSettings.age_verified ? (
+                  {isGuest ? null : userSettings.age_verified ? (
                     <View style={styles.settingsRow}>
                       <Ionicons name="checkmark-circle" size={20} color={C.success} />
                       <View style={styles.settingsRowInfo}>
@@ -1311,6 +1371,13 @@ const styles = StyleSheet.create({
   authError: { color: C.danger, fontSize: 13, marginBottom: 12 },
   authButton: { width: '100%', backgroundColor: C.accent, borderRadius: 12, padding: 16, alignItems: 'center' },
   authButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  betaButton: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: `${C.accent}15`, borderWidth: 1, borderColor: `${C.accent}50`, borderRadius: 12, padding: 16, marginBottom: 20 },
+  betaButtonText: { color: C.accent, fontSize: 16, fontWeight: '600' },
+  authDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, width: '100%' },
+  authDividerLine: { flex: 1, height: 1, backgroundColor: C.border },
+  authDividerText: { fontSize: 12, color: C.muted },
+  betaBadge: { backgroundColor: `${C.accent}15`, borderWidth: 1, borderColor: `${C.accent}40`, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  betaBadgeText: { fontSize: 10, fontWeight: '700', color: C.accent, letterSpacing: 1 },
 
   // Header
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },

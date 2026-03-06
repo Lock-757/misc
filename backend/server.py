@@ -1459,7 +1459,12 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return False
 
 async def get_current_user(request: Request, session_token: Optional[str] = Cookie(None)) -> Optional[Dict]:
-    """Get current user from session token (cookie or header)"""
+    """Get current user from session token or guest ID header."""
+    # Guest / beta access — no sign-up required
+    guest_id = request.headers.get("X-Guest-Id", "").strip()
+    if guest_id and len(guest_id) >= 16:
+        return {"user_id": f"guest_{guest_id}", "is_guest": True, "name": "Beta User"}
+
     token = session_token
     
     # Fallback to Authorization header
