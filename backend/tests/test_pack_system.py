@@ -13,7 +13,7 @@ import requests
 import os
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pack-platform.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://paule-platform.preview.emergentagent.com').rstrip('/')
 ADMIN_KEY = "forge_master_2025"
 
 # Pack slugs from specification

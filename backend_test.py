@@ -691,7 +691,7 @@ class DevinOpsAPITester:
 
 def main():
     # Configuration from review request
-    BASE_URL = "https://pack-platform.preview.emergentagent.com"
+    BASE_URL = "https://paule-platform.preview.emergentagent.com"
     ADMIN_KEY = "forge_master_2025"
     
     print("🔬 BACKEND API COMPREHENSIVE TESTING")
